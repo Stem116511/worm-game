@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>VeryHungryConcorPillar</title>
+<style>
+  :root {
+    --page-bg: #f6f1e7;
+    --text: #2f3d2c;
+    --board-border: #8fae6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--page-bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  h1 { margin: 0; font-size: 1.4rem; }
+  #board {
+    display: block;
+    width: min(94vw, 68vh, 560px);
+    height: auto;
+    aspect-ratio: 1 / 1;
+    border: 4px solid var(--board-border);
+    border-radius: 12px;
+    touch-action: none;
+  }
+  #hint { margin: 0; font-size: 0.85rem; opacity: 0.75; text-align: center; }
+  /* Entwicklerzeile: in einem späteren Schritt entfernen */
+  #info { margin: 0; font: 12px ui-monospace, Consolas, monospace; opacity: 0.55; text-align: center; }
+</style>
+</head>
+<body>
+  <h1>Very Hungry ConcorPillar</h1>
+  <canvas id="board"></canvas>
+  <p id="hint">Leertaste oder Tippen aufs Spielfeld: Pause / Weiter</p>
+  <p id="info"></p>
+
+<script>
+'use strict';
+
+// ---------------------------------------------------------------
+// 1) Konstanten
+// ---------------------------------------------------------------
+const GRID = 20;               // 20 x 20 Felder
+const CELL = 24;               // logische Pixel pro Feld
+const BOARD_PX = GRID * CELL;  // 480 x 480 logische Pixel
+const TICK_MS = 150;           // Dauer eines Spielschritts (Startwert; später schneller mit Score)
+
+// Eigene Farbpalette (Raupen-Thema, helles Blattgrün)
+const COLORS = {
+  boardA: '#e4edcf',
+  boardB: '#d9e5bd',
+  bodyA: '#6dbf5a',
+  bodyB: '#58ab48',
+  head: '#3f8f3a',
+  eyeWhite: '#ffffff',
+  eyePupil: '#1f2a1c',
+  morphoBlue: '#1f5fe0'        // reserviert für den Schmetterling am Ende des Ziel-Modus
+};
+
+// Finale Futter-Liste aus dem Konzept. Farben sind Platzhalter, echte Icons folgen in Woche 2.
+const FOOD = [
+  { name: 'Lasagne',      color: '#c8562a' },
+  { name: 'Ramen',        color: '#e0a53a' },
+  { name: 'Pizza',        color: '#d9382e' },
+  { name: 'Banane',       color: '#f4d03f' },
+  { name: 'Gummibärchen', color: '#8e44ad' },
+  { name: 'Erdbeer-Eis',  color: '#f7a8c0' },
+  { name: 'Kuchen',       color: '#8b5a2b' },
+  { name: 'Aperol',       color: '#ff7f11' },
+  { name: 'Bier',         color: '#f0b323' }
+];
+
+// ---------------------------------------------------------------
+// 2) Zustand (alles, was sich im Spiel ändert, liegt hier)
+// ---------------------------------------------------------------
+const state = {
+  snake: [],                   // Feld-Koordinaten, Index 0 = Kopf
+  dir: { x: 1, y: 0 },         // aktuelle Bewegungsrichtung
+  tick: 0                      // Anzahl bisheriger Spielschritte
+};
+
+// ---------------------------------------------------------------
+// 3) Canvas-Setup (scharfe Darstellung auf Handys mit hoher Pixeldichte)
+// ---------------------------------------------------------------
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+const infoEl = document.getElementById('info');
+
+function setupCanvas() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = BOARD_PX * dpr;   // setzt die Zeichenfläche zurück ...
+  canvas.height = BOARD_PX * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);  // ... daher Skalierung danach setzen
+}
+
+// ---------------------------------------------------------------
+// 4) Spiellogik (pro Tick genau ein Schritt)
+//    DEMO: Die Raupe kriecht im Uhrzeigersinn dem Rand entlang.
+//    Wird in Schritt 2 durch echte Bewegung, Kollision und Futter ersetzt.
+// ---------------------------------------------------------------
+function update() {
+  state.tick++;
+  const head = state.snake[0];
+  let next = { x: head.x + state.dir.x, y: head.y + state.dir.y };
+
+  if (next.x < 0 || next.x >= GRID || next.y < 0 || next.y >= GRID) {
+    // 90 Grad im Uhrzeigersinn abbiegen (Bildschirmkoordinaten: y zeigt nach unten)
+    state.dir = { x: -state.dir.y, y: state.dir.x };
+    next = { x: head.x + state.dir.x, y: head.y + state.dir.y };
+  }
+
+  state.snake.unshift(next);   // neuer Kopf vorne
+  state.snake.pop();           // Schwanzende entfernen (Länge bleibt gleich)
+}
+
+// ---------------------------------------------------------------
+// 5) Zeichnen
+// ---------------------------------------------------------------
+const DEMO_FOOD_CELL = { x: 9, y: 4 };
+
+function currentDemoFood() {
+  return FOOD[Math.floor(state.tick / 8) % FOOD.length];
+}
+
+function drawBoard() {
+  for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < GRID; x++) {
+      ctx.fillStyle = (x + y) % 2 === 0 ? COLORS.boardA : COLORS.boardB;
+      ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+    }
+  }
+}
+
+function drawDemoFood() {
+  const food = currentDemoFood();
+  const cx = DEMO_FOOD_CELL.x * CELL + CELL / 2;
+  const cy = DEMO_FOOD_CELL.y * CELL + CELL / 2;
+  ctx.fillStyle = food.color;
+  ctx.beginPath();
+  ctx.arc(cx, cy, CELL * 0.34, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';   // kleiner Glanzpunkt
+  ctx.beginPath();
+  ctx.arc(cx - CELL * 0.11, cy - CELL * 0.11, CELL * 0.08, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawSnake() {
+  // Vom Schwanz zum Kopf zeichnen, damit der Kopf zuoberst liegt
+  for (let i = state.snake.length - 1; i >= 0; i--) {
+    const s = state.snake[i];
+    const cx = s.x * CELL + CELL / 2;
+    const cy = s.y * CELL + CELL / 2;
+    ctx.fillStyle = i === 0 ? COLORS.head : (i % 2 === 0 ? COLORS.bodyA : COLORS.bodyB);
+    ctx.beginPath();
+    ctx.arc(cx, cy, i === 0 ? CELL * 0.48 : CELL * 0.44, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Augen am Kopf, in Bewegungsrichtung versetzt
+  const h = state.snake[0];
+  const hx = h.x * CELL + CELL / 2;
+  const hy = h.y * CELL + CELL / 2;
+  const d = state.dir;
+  const px = -d.y, py = d.x;   // Senkrechte zur Blickrichtung
+  for (const side of [-1, 1]) {
+    const ex = hx + d.x * CELL * 0.16 + px * side * CELL * 0.2;
+    const ey = hy + d.y * CELL * 0.16 + py * side * CELL * 0.2;
+    ctx.fillStyle = COLORS.eyeWhite;
+    ctx.beginPath();
+    ctx.arc(ex, ey, CELL * 0.13, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = COLORS.eyePupil;
+    ctx.beginPath();
+    ctx.arc(ex + d.x * CELL * 0.04, ey + d.y * CELL * 0.04, CELL * 0.065, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function draw() {
+  drawBoard();
+  drawDemoFood();
+  drawSnake();
+}
+
+// ---------------------------------------------------------------
+// 6) Game-Loop (setInterval mit fixer Rate)
+// ---------------------------------------------------------------
+let timerId = null;
+
+function updateInfo() {
+  infoEl.textContent =
+    'Tick ' + state.tick + ' · ' + TICK_MS + ' ms pro Schritt · ' +
+    (timerId !== null ? 'läuft' : 'Pause') +
+    ' · Futter-Platzhalter: ' + currentDemoFood().name;
+}
+
+function step() {
+  update();
+  draw();
+  updateInfo();
+}
+
+function startLoop() {
+  if (timerId !== null) return;
+  timerId = setInterval(step, TICK_MS);
+  updateInfo();
+}
+
+function stopLoop() {
+  if (timerId === null) return;
+  clearInterval(timerId);
+  timerId = null;
+  updateInfo();
+}
+
+function togglePause() {
+  if (timerId === null) startLoop(); else stopLoop();
+}
+
+// ---------------------------------------------------------------
+// 7) Ereignisse
+// ---------------------------------------------------------------
+document.addEventListener('keydown', function (e) {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    togglePause();
+  }
+});
+canvas.addEventListener('pointerdown', togglePause);   // vorläufig: Tippen = Pause / Weiter
+
+// Tab im Hintergrund oder Bildschirm gesperrt: anhalten, nicht automatisch weiterlaufen
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden) stopLoop();
+});
+
+window.addEventListener('resize', function () {
+  setupCanvas();   // Pixeldichte kann sich beim Zoomen ändern
+  draw();
+});
+
+// ---------------------------------------------------------------
+// 8) Start
+// ---------------------------------------------------------------
+function init() {
+  setupCanvas();
+  state.snake = [
+    { x: 9, y: 10 }, { x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }, { x: 5, y: 10 }
+  ];
+  state.dir = { x: 1, y: 0 };
+  state.tick = 0;
+  draw();
+  startLoop();
+}
+
+init();
+</script>
+</body>
+</html>
