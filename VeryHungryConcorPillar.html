@@ -65,8 +65,13 @@ const START_TICK_MS = 250;     // Dauer eines Schritts beim Spielstart (langsame
 const MIN_TICK_MS = 90;        // schnellste erlaubte Geschwindigkeit (Untergrenze, wird nie unterschritten)
 const TICK_MS_STEP = 6;        // um so viel wird ein Schritt pro gefressenem Futter kuerzer
 
-// Mindest-Wischstrecke in echten Pixeln, ab der eine Beruehrung als Wisch (nicht als Tippen) zaehlt
-const SWIPE_MIN_PX = 24;
+// Mindest-Wischstrecke in echten Pixeln. Die ERSTE Bewegung einer Beruehrung braucht die volle
+// Strecke (SWIPE_MIN_PX) - sonst wuerde ein blosses Tippen als Wisch zaehlen. JEDE WEITERE
+// Richtungsaenderung, waehrend der Finger noch aufliegt, braucht nur noch SWIPE_CONTINUE_PX -
+// das Tipp-Risiko besteht dann nicht mehr, weil schon eine echte Bewegung im Gange ist. Das macht
+// schnelle Kehren (z. B. hoch -> links -> runter in einem Zug, ohne loszulassen) deutlich leichter.
+const SWIPE_MIN_PX = 18;
+const SWIPE_CONTINUE_PX = 9;
 
 // Eigene Farbpalette (Raupen-Thema, helles Blattgrün)
 const COLORS = {
@@ -399,7 +404,8 @@ canvas.addEventListener('touchmove', function (e) {
   const dy = t.clientY - touchRef.y;
   const absDx = Math.abs(dx);
   const absDy = Math.abs(dy);
-  if (Math.max(absDx, absDy) < SWIPE_MIN_PX) return;   // noch keine ausreichende Bewegung
+  const threshold = sawSwipeThisTouch ? SWIPE_CONTINUE_PX : SWIPE_MIN_PX;
+  if (Math.max(absDx, absDy) < threshold) return;   // noch keine ausreichende Bewegung
 
   const dir = absDx > absDy
     ? { x: dx > 0 ? 1 : -1, y: 0 }
