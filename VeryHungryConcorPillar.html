@@ -143,7 +143,7 @@
     </div>
   </div>
   <div id="controls">
-    <button id="pauseBtn" class="game-btn" type="button">Pause</button>
+    <button id="pauseBtn" class="game-btn" type="button">Take a Break!</button>
   </div>
   <p id="hint">Pfeiltasten/WASD oder Wischen steuern · Start/Pause/Neustart per Button oder Leertaste</p>
   <p id="info"></p>
@@ -510,7 +510,7 @@ function drawCenteredText(text) {
 // sich nicht zwei unterschiedlich breite Elemente (Canvas-Text + Button) gegenseitig ueberlagern.
 function drawOverlay() {
   if (state.phase === 'paused') {
-    drawCenteredText('Pause');
+    drawCenteredText('Take a Break!');
   }
 }
 
@@ -541,7 +541,7 @@ let timeoutId = null;
 let expectedTickTime = 0;   // Zeitpunkt (performance.now()), zu dem der naechste Tick faellig ist
 
 function updateScore() {
-  scoreEl.textContent = 'Punkte: ' + state.score;
+  scoreEl.textContent = 'Score: ' + state.score;
 }
 
 function updateInfo() {
@@ -638,7 +638,7 @@ function updateButtons() {
 
   const showPause = phase === 'running' || phase === 'paused';
   pauseBtn.style.display = showPause ? 'inline-block' : 'none';
-  pauseBtn.textContent = phase === 'paused' ? 'Weiter' : 'Pause';
+  pauseBtn.textContent = phase === 'paused' ? 'Weiter' : 'Take a Break!';
 }
 
 function step() {
