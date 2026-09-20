@@ -56,12 +56,11 @@
     -webkit-tap-highlight-color: transparent;
   }
   .game-btn:active { filter: brightness(0.9); }
+  .mode-btn { padding: 8px 16px; font-size: 0.9rem; }
 
-  /* Zentriertes Overlay auf dem Canvas fuer Start (ready) und Neustart (over).
+  /* Zentriertes Overlay auf dem Canvas fuer Startbildschirm (ready) und Endbildschirm (over/won).
      pointer-events:none auf dem Container, damit er ausserhalb des Panels nichts blockiert -
-     das Panel selbst holt sich pointer-events per Regel unten zurueck. Text und Button liegen
-     JETZT zusammen in diesem einen HTML-Panel (nicht mehr separat auf dem Canvas gezeichnet) -
-     sonst ueberlagern sich zwei unterschiedlich breite Elemente und der Text wirkt "zerhackt". */
+     das Panel selbst holt sich pointer-events per Regel unten zurueck. */
   #centerOverlay {
     position: absolute;
     inset: 0;
@@ -80,8 +79,25 @@
     color: #f6f1e7;
     padding: 16px 22px;
     border-radius: 14px;
+    max-width: min(86vw, 380px);
   }
-  #overlayStatus { margin: 0; font-weight: 700; font-size: 1.05rem; white-space: nowrap; }
+  #overlayStatus, #endStatus { margin: 0; font-weight: 700; font-size: 1.05rem; text-align: center; }
+
+  /* Neu in Paket 4: Startbildschirm-Einstellungen (Modus, Zielwert, Boesewicht). Bewusst als
+     eigener Block, damit er sich unabhaengig vom Endbildschirm ein-/ausblenden laesst (siehe
+     updateButtons()). */
+  #readyControls, #endControls { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  #modeSelect { display: flex; gap: 8px; }
+  #goalInputWrap { display: flex; align-items: center; gap: 6px; font-size: 0.95rem; }
+  #goalInputWrap input[type="number"] {
+    width: 64px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: none;
+    font: inherit;
+  }
+  #goalError { margin: 0; font-size: 0.8rem; color: #ffb4b4; min-height: 1em; text-align: center; }
+  #villainLabel { display: flex; align-items: center; gap: 6px; font-size: 0.95rem; cursor: pointer; }
 
   /* Fester Platz unter dem Feld fuer den Pause/Weiter-Button, damit nichts springt,
      wenn er ein-/ausgeblendet wird. */
@@ -100,9 +116,24 @@
     <canvas id="board"></canvas>
     <div id="centerOverlay">
       <div class="panel">
-        <p id="overlayStatus"></p>
-        <button id="startBtn" class="game-btn" type="button">Start</button>
-        <button id="restartBtn" class="game-btn" type="button">Neustart</button>
+        <div id="readyControls">
+          <p id="overlayStatus"></p>
+          <div id="modeSelect">
+            <button type="button" id="modeEndlessBtn" class="game-btn mode-btn">Endless</button>
+            <button type="button" id="modeGoalBtn" class="game-btn mode-btn">Goal</button>
+          </div>
+          <div id="goalInputWrap">
+            <label for="goalInput">Target:</label>
+            <input type="number" id="goalInput" min="1" max="200" step="1" value="50">
+          </div>
+          <p id="goalError"></p>
+          <label id="villainLabel"><input type="checkbox" id="villainCheckbox"> Villain</label>
+          <button id="startBtn" class="game-btn" type="button">Start</button>
+        </div>
+        <div id="endControls">
+          <p id="endStatus"></p>
+          <button id="restartBtn" class="game-btn" type="button">Neustart</button>
+        </div>
       </div>
     </div>
   </div>
@@ -137,6 +168,18 @@ const TICK_MS_STEP = 6;        // um so viel wird ein Schritt pro gefressenem Fu
 const SWIPE_MIN_PX = 18;
 const SWIPE_CONTINUE_PX = 9;
 
+// Neu in Paket 4: Zielwert-Obergrenze fuer den Ziel-Modus (offener Punkt aus dem Konzept).
+// Bei 1 Punkt/Futter und GRID*GRID=400 Feldern sind rechnerisch max. 395 moeglich (5 Startsegmente
+// sind schon belegt). 200 ist bewusst kleiner gewaehlt, damit ein Ziel in vertretbarer Zeit
+// erreichbar bleibt - ein Vorschlag von Claude, noch nicht mit Testpersonen abgeglichen.
+const MAX_GOAL_TARGET = 200;
+
+// Boesewicht: Erscheinungswahrscheinlichkeit pro Tick, Lebensdauer und Abklingzeit danach.
+// Wie bei den Tempo-/Wisch-Werten: Richtwerte, noch nicht mit Testpersonen geprueft.
+const VILLAIN_SPAWN_CHANCE = 0.02;   // pro Tick, wenn gerade keiner da ist und keine Abklingzeit laeuft
+const VILLAIN_LIFETIME_TICKS = 25;   // so lange bleibt er sichtbar, bevor er von selbst verschwindet
+const VILLAIN_COOLDOWN_TICKS = 20;   // Pause nach dem Verschwinden, bevor er erneut erscheinen kann
+
 // Eigene Farbpalette (Raupen-Thema, helles Blattgrün)
 const COLORS = {
   boardA: '#e4edcf',
@@ -146,7 +189,8 @@ const COLORS = {
   head: '#3f8f3a',
   eyeWhite: '#ffffff',
   eyePupil: '#1f2a1c',
-  morphoBlue: '#1f5fe0'        // reserviert für den Schmetterling am Ende des Ziel-Modus
+  morphoBlue: '#1f5fe0',       // reserviert für den Schmetterling am Ende des Ziel-Modus
+  villain: '#5b2a86'           // Platzhalter-Farbe fuer den Boesewicht, echtes Design folgt in Woche 2
 };
 
 // Finale Futter-Liste aus dem Konzept. Farben sind Platzhalter, echte Icons folgen in Woche 2.
@@ -180,9 +224,14 @@ const state = {
   nextDir: { x: 1, y: 0 },     // durch Tastendruck/Wisch vorgemerkte Richtung, wird zu Beginn des nächsten Tick übernommen
   tick: 0,                     // Anzahl bisheriger Spielschritte
   score: 0,                    // Anzahl gefressenes Futter
-  phase: 'ready',              // 'ready' | 'running' | 'paused' | 'over'
+  phase: 'ready',              // 'ready' | 'running' | 'paused' | 'over' | 'won'
   food: null,                  // { x, y, type } - type ist der Index in FOOD
-  tickMs: START_TICK_MS        // aktuelle Geschwindigkeit (sinkt mit dem Score bis MIN_TICK_MS)
+  tickMs: START_TICK_MS,       // aktuelle Geschwindigkeit (sinkt mit dem Score bis MIN_TICK_MS)
+  mode: 'endless',              // 'endless' | 'goal' - auf dem Startbildschirm gewaehlt
+  goalTarget: null,             // Zielwert im Ziel-Modus (null im Endlos-Modus)
+  villainEnabled: false,        // Checkbox auf dem Startbildschirm
+  villain: null,                // { x, y, ticksLeft } oder null, wenn gerade keiner da ist
+  villainCooldown: 0            // Ticks, bis der Boesewicht wieder erscheinen darf
 };
 
 // ---------------------------------------------------------------
@@ -193,7 +242,16 @@ const ctx = canvas.getContext('2d');
 const infoEl = document.getElementById('info');
 const scoreEl = document.getElementById('score');
 const centerOverlay = document.getElementById('centerOverlay');
+const readyControls = document.getElementById('readyControls');
+const endControls = document.getElementById('endControls');
 const overlayStatus = document.getElementById('overlayStatus');
+const endStatus = document.getElementById('endStatus');
+const modeEndlessBtn = document.getElementById('modeEndlessBtn');
+const modeGoalBtn = document.getElementById('modeGoalBtn');
+const goalInputWrap = document.getElementById('goalInputWrap');
+const goalInput = document.getElementById('goalInput');
+const goalError = document.getElementById('goalError');
+const villainCheckbox = document.getElementById('villainCheckbox');
 const startBtn = document.getElementById('startBtn');
 const restartBtn = document.getElementById('restartBtn');
 const pauseBtn = document.getElementById('pauseBtn');
@@ -218,7 +276,7 @@ function isOpposite(a, b) {
 // eine bereits vorgemerkte state.nextDir - so kann ein zweiter, schneller Steuerbefehl vor dem
 // nächsten Tick keine Wende "durchschmuggeln", die in der Summe 180 Grad ergibt.
 function handleDirectionInput(dir) {
-  if (state.phase === 'over' || state.phase === 'paused') return;
+  if (state.phase === 'over' || state.phase === 'won' || state.phase === 'paused') return;
   if (isOpposite(dir, state.dir)) return;
   state.nextDir = dir;
   if (state.phase === 'ready') {
@@ -227,22 +285,64 @@ function handleDirectionInput(dir) {
   }
 }
 
-function randomFreeCell() {
+// "extra" (optional): zusaetzliche, momentan belegte Zellen, die neben der Raupe ebenfalls
+// gemieden werden sollen (z. B. das Futter beim Boesewicht-Spawn, oder umgekehrt). Neu in Paket 4 -
+// vorher gab es nur die Raupe als Einschraenkung.
+function randomFreeCell(extra) {
   let cell;
   do {
     cell = { x: Math.floor(Math.random() * GRID), y: Math.floor(Math.random() * GRID) };
-  } while (state.snake.some(function (s) { return s.x === cell.x && s.y === cell.y; }));
+  } while (
+    state.snake.some(function (s) { return s.x === cell.x && s.y === cell.y; }) ||
+    (extra && extra.some(function (c) { return c.x === cell.x && c.y === cell.y; }))
+  );
   return cell;
 }
 
 function spawnFood() {
-  const cell = randomFreeCell();
+  const extra = state.villain ? [state.villain] : undefined;
+  const cell = randomFreeCell(extra);
   state.food = { x: cell.x, y: cell.y, type: Math.floor(Math.random() * FOOD.length) };
 }
 
 function gameOver() {
   state.phase = 'over';
   stopLoop();
+}
+
+// Neu in Paket 4: Ziel-Modus erfolgreich beendet (Zielwert erreicht). Eigener Endzustand statt
+// gameOver(), da es kein Verlieren ist - eigener Text/Button-Beschriftung in updateButtons().
+function winGame() {
+  state.phase = 'won';
+  stopLoop();
+}
+
+// Boesewicht: erscheint gelegentlich auf einem freien Feld, steht dort still und verschwindet nach
+// VILLAIN_LIFETIME_TICKS Ticks von selbst wieder. Danach eine Abklingzeit (VILLAIN_COOLDOWN_TICKS),
+// bevor er erneut erscheinen kann - sonst koennte er theoretisch sofort wieder auftauchen. Wird pro
+// Tick aus update() aufgerufen, bevor die Kollision fuer diesen Tick geprueft wird.
+function updateVillain() {
+  if (!state.villainEnabled) return;
+
+  if (state.villain) {
+    state.villain.ticksLeft--;
+    if (state.villain.ticksLeft <= 0) {
+      state.villain = null;
+      state.villainCooldown = VILLAIN_COOLDOWN_TICKS;
+    }
+    return;
+  }
+
+  if (state.villainCooldown > 0) {
+    state.villainCooldown--;
+    return;
+  }
+
+  if (Math.random() < VILLAIN_SPAWN_CHANCE) {
+    const extra = state.food ? [state.food] : undefined;
+    const cell = randomFreeCell(extra);
+    state.villain = { x: cell.x, y: cell.y, ticksLeft: VILLAIN_LIFETIME_TICKS };
+  }
 }
 
 // Nach jedem gefressenen Futter neu berechnen. Aendert sich die Geschwindigkeit tatsaechlich
@@ -260,10 +360,18 @@ function applyGrowthSpeedup() {
 
 function update() {
   state.dir = state.nextDir;   // vorgemerkte Richtung genau einmal pro Tick übernehmen
+  updateVillain();             // Spawn/Despawn zuerst, damit die Kollisionspruefung unten den
+                                // fuer DIESEN Tick gueltigen Boesewicht-Zustand verwendet
+
   const head = state.snake[0];
   const next = { x: head.x + state.dir.x, y: head.y + state.dir.y };
 
   if (next.x < 0 || next.x >= GRID || next.y < 0 || next.y >= GRID) {
+    gameOver();
+    return;
+  }
+
+  if (state.villainEnabled && state.villain && next.x === state.villain.x && next.y === state.villain.y) {
     gameOver();
     return;
   }
@@ -282,6 +390,10 @@ function update() {
   state.snake.unshift(next);
   if (willGrow) {
     state.score++;
+    if (state.mode === 'goal' && state.goalTarget !== null && state.score >= state.goalTarget) {
+      winGame();
+      return;
+    }
     spawnFood();
     applyGrowthSpeedup();
   } else {
@@ -315,6 +427,24 @@ function drawFood() {
   ctx.fillStyle = 'rgba(255,255,255,0.55)';   // kleiner Glanzpunkt
   ctx.beginPath();
   ctx.arc(cx - CELL * 0.11, cy - CELL * 0.11, CELL * 0.08, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// Platzhalter-Darstellung fuer den Boesewicht (einfacher dunkler Kreis mit zwei Augen) - echtes
+// Design folgt im Woche-2-Stilabgleich, genau wie bei Raupe und Futter.
+function drawVillain() {
+  if (!state.villainEnabled || !state.villain) return;
+  const v = state.villain;
+  const cx = v.x * CELL + CELL / 2;
+  const cy = v.y * CELL + CELL / 2;
+  ctx.fillStyle = COLORS.villain;
+  ctx.beginPath();
+  ctx.arc(cx, cy, CELL * 0.42, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(cx - CELL * 0.15, cy - CELL * 0.08, CELL * 0.09, 0, Math.PI * 2);
+  ctx.arc(cx + CELL * 0.15, cy - CELL * 0.08, CELL * 0.09, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -362,9 +492,9 @@ function drawCenteredText(text) {
   ctx.restore();
 }
 
-// Sichtbarer Hinweis auf dem Spielfeld selbst. Nur noch fuer "Pause" - bei "ready" und "over"
-// steht der Text zusammen mit dem Button im HTML-Panel (siehe updateButtons()), damit sich nicht
-// zwei unterschiedlich breite Elemente (Canvas-Text + Button) gegenseitig ueberlagern.
+// Sichtbarer Hinweis auf dem Spielfeld selbst. Nur noch fuer "Pause" - bei "ready"/"over"/"won"
+// steht der Text zusammen mit dem jeweiligen Button im HTML-Panel (siehe updateButtons()), damit
+// sich nicht zwei unterschiedlich breite Elemente (Canvas-Text + Button) gegenseitig ueberlagern.
 function drawOverlay() {
   if (state.phase === 'paused') {
     drawCenteredText('Pause');
@@ -374,6 +504,7 @@ function drawOverlay() {
 function draw() {
   drawBoard();
   drawFood();
+  drawVillain();
   drawSnake();
   drawOverlay();
 }
@@ -401,28 +532,52 @@ function updateScore() {
 }
 
 function updateInfo() {
+  const modeLabel = state.mode === 'goal' ? ('Goal ' + (state.goalTarget !== null ? state.goalTarget : '?')) : 'Endless';
   infoEl.textContent =
-    'Phase: ' + state.phase + ' · Tick ' + state.tick + ' · ' + state.tickMs + ' ms/Schritt · Punkte: ' + state.score;
+    'Phase: ' + state.phase + ' · Tick ' + state.tick + ' · ' + state.tickMs + ' ms/Schritt · Punkte: ' + state.score +
+    ' · Mode: ' + modeLabel + (state.villainEnabled ? ' · Villain' : '');
 }
 
-// Zeigt/versteckt Start-, Neustart- und Pause-Button je nach Spielphase, und setzt den
-// Status-Text im selben Panel wie Start/Neustart (siehe CSS-Kommentar zu #centerOverlay).
-// Wird ueberall dort aufgerufen, wo sich die Phase aendern kann (siehe startLoop/stopLoop/
-// step/resetGame unten).
+// Zeigt an, welcher Modus aktuell gewaehlt ist (nur auf dem Startbildschirm relevant), und blendet
+// das Zielwert-Feld nur im Ziel-Modus ein. Bewusst per style statt classList umgesetzt (einfacher,
+// keine zusaetzliche CSS-Klasse noetig).
+function updateModeButtons() {
+  const isGoal = state.mode === 'goal';
+  modeEndlessBtn.style.opacity = isGoal ? '0.55' : '1';
+  modeGoalBtn.style.opacity = isGoal ? '1' : '0.55';
+  goalInputWrap.style.display = isGoal ? 'flex' : 'none';
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  goalError.textContent = '';
+  updateModeButtons();
+}
+
+// Zeigt/versteckt Start- bzw. Endbildschirm-Bereich je nach Spielphase, und setzt die jeweiligen
+// Status-Texte/Button-Beschriftungen. Wird ueberall dort aufgerufen, wo sich die Phase aendern
+// kann (siehe startLoop/stopLoop/step/resetGame unten).
 function updateButtons() {
-  const showCenter = state.phase === 'ready' || state.phase === 'over';
+  const phase = state.phase;
+  const showCenter = phase === 'ready' || phase === 'over' || phase === 'won';
   centerOverlay.style.display = showCenter ? 'flex' : 'none';
-  startBtn.style.display = state.phase === 'ready' ? 'inline-block' : 'none';
-  restartBtn.style.display = state.phase === 'over' ? 'inline-block' : 'none';
-  if (state.phase === 'ready') {
+  readyControls.style.display = phase === 'ready' ? 'flex' : 'none';
+  endControls.style.display = (phase === 'over' || phase === 'won') ? 'flex' : 'none';
+
+  if (phase === 'ready') {
     overlayStatus.textContent = 'Bereit?';
-  } else if (state.phase === 'over') {
-    overlayStatus.textContent = 'Game Over · ' + state.score + ' Punkte';
+    updateModeButtons();
+  } else if (phase === 'over') {
+    endStatus.textContent = 'Game Over · ' + state.score + ' Punkte';
+    restartBtn.textContent = 'Neustart';
+  } else if (phase === 'won') {
+    endStatus.textContent = 'Goal reached! Score: ' + state.score;
+    restartBtn.textContent = 'Restart';
   }
 
-  const showPause = state.phase === 'running' || state.phase === 'paused';
+  const showPause = phase === 'running' || phase === 'paused';
   pauseBtn.style.display = showPause ? 'inline-block' : 'none';
-  pauseBtn.textContent = state.phase === 'paused' ? 'Weiter' : 'Pause';
+  pauseBtn.textContent = phase === 'paused' ? 'Weiter' : 'Pause';
 }
 
 function step() {
@@ -489,21 +644,42 @@ document.addEventListener('keydown', function (e) {
 
   if (dir) {
     handleDirectionInput(dir);
-  } else if (state.phase === 'over') {
+  } else if (state.phase === 'over' || state.phase === 'won') {
     resetGame();
   } else if (state.phase !== 'ready') {
     togglePause();
   }
 });
 
+// Modus-Auswahl: nur auf dem Startbildschirm relevant (waehrend eines laufenden Spiels sind die
+// Buttons ohnehin versteckt, siehe updateButtons()).
+modeEndlessBtn.addEventListener('click', function () { setMode('endless'); });
+modeGoalBtn.addEventListener('click', function () { setMode('goal'); });
+
 // Start-, Neustart- und Pause-Button: dieselben Funktionen wie Tastatur/Swipe, nur ein anderer
-// Ausloeser. "Start" nutzt die aktuelle (Anfangs-)Richtung weiter, statt eine neue vorzugeben -
-// wer eine andere Richtung will, wischt oder drueckt stattdessen direkt eine Pfeiltaste.
+// Ausloeser. "Start" liest zusaetzlich die auf dem Startbildschirm gewaehlten Einstellungen
+// (Modus, Zielwert, Boesewicht) und uebernimmt sie erst jetzt in den state - bis zum Klick auf
+// Start kann also noch alles geaendert werden, ohne ein laufendes Spiel zu beeinflussen.
 startBtn.addEventListener('click', function () {
-  if (state.phase === 'ready') handleDirectionInput(state.dir);
+  if (state.phase !== 'ready') return;
+
+  if (state.mode === 'goal') {
+    const raw = parseInt(goalInput.value, 10);
+    if (!Number.isInteger(raw) || raw < 1 || raw > MAX_GOAL_TARGET) {
+      goalError.textContent = 'Please enter a whole number between 1 and ' + MAX_GOAL_TARGET + '.';
+      return;
+    }
+    goalError.textContent = '';
+    state.goalTarget = raw;
+  } else {
+    state.goalTarget = null;
+  }
+  state.villainEnabled = !!villainCheckbox.checked;
+
+  handleDirectionInput(state.dir);
 });
 restartBtn.addEventListener('click', function () {
-  if (state.phase === 'over') resetGame();
+  if (state.phase === 'over' || state.phase === 'won') resetGame();
 });
 pauseBtn.addEventListener('click', function () {
   togglePause();
@@ -513,7 +689,6 @@ pauseBtn.addEventListener('click', function () {
 // beim Loslassen (touchend). Bei hohem Tempo bleibt sonst kaum Zeit zwischen Tick und Reaktion.
 // Nach jeder erkannten Richtung wird der Referenzpunkt zurueckgesetzt, damit sich innerhalb
 // derselben Beruehrung (ohne loszulassen) noch weitere Richtungswechsel erkennen lassen.
-// Neustart per Tippen (Behelf aus Paket 2) entfaellt jetzt, da es den echten Neustart-Button gibt.
 let touchRef = null;          // wird nach jedem erkannten Wisch aktualisiert
 let sawSwipeThisTouch = false;
 
@@ -580,6 +755,11 @@ function resetGame() {
   state.phase = 'ready';
   state.food = null;
   state.tickMs = START_TICK_MS;
+  state.villain = null;
+  state.villainCooldown = 0;
+  // state.mode/goalTarget/villainEnabled bewusst NICHT zurueckgesetzt: das sind die auf dem
+  // Startbildschirm gewaehlten Einstellungen, die beim naechsten Klick auf Start ohnehin frisch
+  // aus den Bedienelementen (goalInput/villainCheckbox) uebernommen werden (siehe oben).
   spawnFood();
   draw();
   updateScore();
