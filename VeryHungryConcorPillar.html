@@ -372,41 +372,56 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
-// Swipe-Steuerung: Start- und Endpunkt der Beruehrung vergleichen, laengere Achse gewinnt.
-// Ein kurzes Tippen (unter SWIPE_MIN_PX) zaehlt nicht als Wisch - nach Game Over startet es
-// stattdessen neu (vorgezogener Behelf, bis es in Paket 3 einen richtigen Neustart-Button gibt).
-let touchStart = null;
+// Swipe-Steuerung: Die Richtung wird schon WAEHREND der Bewegung erkannt (touchmove), nicht erst
+// beim Loslassen (touchend). Bei hohem Tempo bleibt sonst kaum Zeit zwischen Tick und Reaktion.
+// Nach jeder erkannten Richtung wird der Referenzpunkt zurueckgesetzt, damit sich innerhalb
+// derselben Beruehrung (ohne loszulassen) noch weitere Richtungswechsel erkennen lassen.
+// Ein kurzes Tippen (Bewegung bleibt unter SWIPE_MIN_PX) zaehlt nicht als Wisch - nach Game Over
+// startet es stattdessen neu (vorgezogener Behelf, bis es in Paket 3 einen richtigen Neustart-Button gibt).
+let touchStartPoint = null;   // fix ab Beruehrungsbeginn, nur fuer die Tipp-Erkennung am Ende
+let touchRef = null;          // wird nach jedem erkannten Wisch aktualisiert
+let sawSwipeThisTouch = false;
 
 canvas.addEventListener('touchstart', function (e) {
   e.preventDefault();
   if (e.touches.length !== 1) return;
   const t = e.touches[0];
-  touchStart = { x: t.clientX, y: t.clientY };
+  touchStartPoint = { x: t.clientX, y: t.clientY };
+  touchRef = { x: t.clientX, y: t.clientY };
+  sawSwipeThisTouch = false;
 }, { passive: false });
 
 canvas.addEventListener('touchmove', function (e) {
   e.preventDefault();   // verhindert Scrollen/Ziehen der Seite waehrend des Wischens
-}, { passive: false });
-
-canvas.addEventListener('touchend', function (e) {
-  e.preventDefault();
-  if (!touchStart) return;
-  const t = e.changedTouches[0];
-  const dx = t.clientX - touchStart.x;
-  const dy = t.clientY - touchStart.y;
+  if (!touchRef || e.touches.length !== 1) return;
+  const t = e.touches[0];
+  const dx = t.clientX - touchRef.x;
+  const dy = t.clientY - touchRef.y;
   const absDx = Math.abs(dx);
   const absDy = Math.abs(dy);
-  touchStart = null;
-
-  if (Math.max(absDx, absDy) < SWIPE_MIN_PX) {
-    if (state.phase === 'over') resetGame();
-    return;
-  }
+  if (Math.max(absDx, absDy) < SWIPE_MIN_PX) return;   // noch keine ausreichende Bewegung
 
   const dir = absDx > absDy
     ? { x: dx > 0 ? 1 : -1, y: 0 }
     : { x: 0, y: dy > 0 ? 1 : -1 };
   handleDirectionInput(dir);
+  sawSwipeThisTouch = true;
+  touchRef = { x: t.clientX, y: t.clientY };   // ab hier neu messen
+}, { passive: false });
+
+canvas.addEventListener('touchend', function (e) {
+  e.preventDefault();
+  if (!sawSwipeThisTouch && touchStartPoint) {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartPoint.x;
+    const dy = t.clientY - touchStartPoint.y;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE_MIN_PX && state.phase === 'over') {
+      resetGame();
+    }
+  }
+  touchStartPoint = null;
+  touchRef = null;
+  sawSwipeThisTouch = false;
 }, { passive: false });
 
 // Tab im Hintergrund oder Bildschirm gesperrt: anhalten, nicht automatisch weiterlaufen.
