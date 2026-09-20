@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>VeryHungryConcorPillar</title>
+<title>The Very Hungry ConcorPillar</title>
 <style>
   :root {
     --page-bg: #f6f1e7;
@@ -81,7 +81,9 @@
     border-radius: 14px;
     max-width: min(86vw, 380px);
   }
-  #overlayStatus, #endStatus { margin: 0; font-weight: 700; font-size: 1.05rem; text-align: center; }
+  #overlayStatus, #endTitle { margin: 0; font-weight: 700; font-size: 1.05rem; text-align: center; }
+  #endLine1, #endLine2 { margin: 0; font-size: 0.95rem; text-align: center; }
+  #endScore { margin: 0; font-size: 0.8rem; opacity: 0.85; text-align: center; }
 
   /* Neu in Paket 4: Startbildschirm-Einstellungen (Modus, Zielwert, Boesewicht). Bewusst als
      eigener Block, damit er sich unabhaengig vom Endbildschirm ein-/ausblenden laesst (siehe
@@ -110,7 +112,7 @@
 </style>
 </head>
 <body>
-  <h1>Very Hungry ConcorPillar</h1>
+  <h1>The Very Hungry ConcorPillar</h1>
   <p id="score"></p>
   <div id="boardWrap">
     <canvas id="board"></canvas>
@@ -131,8 +133,11 @@
           <button id="startBtn" class="game-btn" type="button">Start</button>
         </div>
         <div id="endControls">
-          <p id="endStatus"></p>
-          <button id="restartBtn" class="game-btn" type="button">Neustart</button>
+          <p id="endTitle"></p>
+          <p id="endLine1"></p>
+          <p id="endLine2"></p>
+          <p id="endScore"></p>
+          <button id="restartBtn" class="game-btn" type="button">Retry</button>
         </div>
       </div>
     </div>
@@ -231,7 +236,9 @@ const state = {
   goalTarget: null,             // Zielwert im Ziel-Modus (null im Endlos-Modus)
   villainEnabled: false,        // Checkbox auf dem Startbildschirm
   villain: null,                // { x, y, ticksLeft } oder null, wenn gerade keiner da ist
-  villainCooldown: 0            // Ticks, bis der Boesewicht wieder erscheinen darf
+  villainCooldown: 0,           // Ticks, bis der Boesewicht wieder erscheinen darf
+  overReason: null              // 'wall' | 'self' | 'villain' - warum gameOver() ausgeloest wurde,
+                                 // bestimmt den Text auf dem Endbildschirm (siehe updateButtons())
 };
 
 // ---------------------------------------------------------------
@@ -245,7 +252,10 @@ const centerOverlay = document.getElementById('centerOverlay');
 const readyControls = document.getElementById('readyControls');
 const endControls = document.getElementById('endControls');
 const overlayStatus = document.getElementById('overlayStatus');
-const endStatus = document.getElementById('endStatus');
+const endTitle = document.getElementById('endTitle');
+const endLine1 = document.getElementById('endLine1');
+const endLine2 = document.getElementById('endLine2');
+const endScore = document.getElementById('endScore');
 const modeEndlessBtn = document.getElementById('modeEndlessBtn');
 const modeGoalBtn = document.getElementById('modeGoalBtn');
 const goalInputWrap = document.getElementById('goalInputWrap');
@@ -305,8 +315,11 @@ function spawnFood() {
   state.food = { x: cell.x, y: cell.y, type: Math.floor(Math.random() * FOOD.length) };
 }
 
-function gameOver() {
+// "reason" haelt fest, WORAN die Raupe gestorben ist ('wall' | 'self' | 'villain') - der
+// Endbildschirm (siehe updateButtons()) zeigt je nach Ursache einen anderen Text.
+function gameOver(reason) {
   state.phase = 'over';
+  state.overReason = reason;
   stopLoop();
 }
 
@@ -367,12 +380,12 @@ function update() {
   const next = { x: head.x + state.dir.x, y: head.y + state.dir.y };
 
   if (next.x < 0 || next.x >= GRID || next.y < 0 || next.y >= GRID) {
-    gameOver();
+    gameOver('wall');
     return;
   }
 
   if (state.villainEnabled && state.villain && next.x === state.villain.x && next.y === state.villain.y) {
-    gameOver();
+    gameOver('villain');
     return;
   }
 
@@ -383,7 +396,7 @@ function update() {
   // letzte Segment nur dann mitgeprüft, wenn die Raupe wächst (Schwanz bleibt liegen).
   const bodyToCheck = willGrow ? state.snake : state.snake.slice(0, -1);
   if (bodyToCheck.some(function (seg) { return seg.x === next.x && seg.y === next.y; })) {
-    gameOver();
+    gameOver('self');
     return;
   }
 
@@ -535,7 +548,8 @@ function updateInfo() {
   const modeLabel = state.mode === 'goal' ? ('Goal ' + (state.goalTarget !== null ? state.goalTarget : '?')) : 'Endless';
   infoEl.textContent =
     'Phase: ' + state.phase + ' · Tick ' + state.tick + ' · ' + state.tickMs + ' ms/Schritt · Punkte: ' + state.score +
-    ' · Mode: ' + modeLabel + (state.villainEnabled ? ' · Villain' : '');
+    ' · Mode: ' + modeLabel + (state.villainEnabled ? ' · Villain' : '') +
+    (state.overReason ? ' · Reason: ' + state.overReason : '');
 }
 
 // Zeigt an, welcher Modus aktuell gewaehlt ist (nur auf dem Startbildschirm relevant), und blendet
@@ -554,6 +568,56 @@ function setMode(mode) {
   updateModeButtons();
 }
 
+// Setzt Text UND Sichtbarkeit einer Endbildschirm-Zeile in einem Schritt: eine leere Zeile wird
+// komplett ausgeblendet (nicht nur textlos), damit der flex-gap zwischen den Zeilen keine
+// unschoene Luecke fuer eine ungenutzte Zeile freihaelt.
+function setEndLine(el, text) {
+  if (text) {
+    el.textContent = text;
+    el.style.display = 'block';
+  } else {
+    el.textContent = '';
+    el.style.display = 'none';
+  }
+}
+
+// Waehlt den passenden Text fuer den Endbildschirm - abhaengig davon, ob das Ziel erreicht wurde
+// oder woran die Raupe gestorben ist (siehe state.overReason). Mit Marco abgestimmt (20.09.2026):
+// - Ziel erreicht: "Look, I am a beautiful butterfly!" (Platzhalter-Text bis zum echten
+//   Schmetterling-Bildschirm in Woche 2), plus Punktzahl kleiner darunter.
+// - Tod durch den Boesewicht: eigene Text-Variante ("It was a trap! / There was no food!"),
+//   UNABHAENGIG von der Punktzahl - auch bei 0 Punkten hat diese Variante Vorrang vor der
+//   "Nichts gegessen"-Variante unten, weil der Boesewicht die konkretere/interessantere Erklaerung
+//   fuer das Spielende liefert. Bewusste Priorisierung von Claude, noch nicht mit Marco
+//   gegengeprueft - siehe Rueckfrage in der Lieferantwort.
+// - Kein Boesewicht-Tod, aber 0 Punkte: eigene "Nichts gegessen"-Variante ohne separate
+//   Punktzahl-Zeile (waere redundant zu "Nothing eaten").
+// - Kein Boesewicht-Tod, mindestens 1 Punkt: normale "still hungry"-Variante mit Punktzahl.
+function applyEndScreenText() {
+  if (state.phase === 'won') {
+    setEndLine(endTitle, 'Look, I am a beautiful butterfly!');
+    setEndLine(endLine1, '');
+    setEndLine(endLine2, '');
+    setEndLine(endScore, 'Score: ' + state.score);
+    return;
+  }
+
+  setEndLine(endTitle, 'Game Over');
+  if (state.overReason === 'villain') {
+    setEndLine(endLine1, 'It was a trap!');
+    setEndLine(endLine2, 'There was no food!');
+    setEndLine(endScore, 'Score: ' + state.score);
+  } else if (state.score === 0) {
+    setEndLine(endLine1, 'ConcorPillar is starving!');
+    setEndLine(endLine2, 'Nothing eaten');
+    setEndLine(endScore, '');
+  } else {
+    setEndLine(endLine1, 'ConcorPillar is still hungry!');
+    setEndLine(endLine2, '');
+    setEndLine(endScore, 'Score: ' + state.score);
+  }
+}
+
 // Zeigt/versteckt Start- bzw. Endbildschirm-Bereich je nach Spielphase, und setzt die jeweiligen
 // Status-Texte/Button-Beschriftungen. Wird ueberall dort aufgerufen, wo sich die Phase aendern
 // kann (siehe startLoop/stopLoop/step/resetGame unten).
@@ -565,14 +629,11 @@ function updateButtons() {
   endControls.style.display = (phase === 'over' || phase === 'won') ? 'flex' : 'none';
 
   if (phase === 'ready') {
-    overlayStatus.textContent = 'Bereit?';
+    overlayStatus.textContent = 'Ready?';
     updateModeButtons();
-  } else if (phase === 'over') {
-    endStatus.textContent = 'Game Over · ' + state.score + ' Punkte';
-    restartBtn.textContent = 'Neustart';
-  } else if (phase === 'won') {
-    endStatus.textContent = 'Goal reached! Score: ' + state.score;
-    restartBtn.textContent = 'Restart';
+  } else if (phase === 'over' || phase === 'won') {
+    restartBtn.textContent = 'Retry';
+    applyEndScreenText();
   }
 
   const showPause = phase === 'running' || phase === 'paused';
@@ -757,6 +818,7 @@ function resetGame() {
   state.tickMs = START_TICK_MS;
   state.villain = null;
   state.villainCooldown = 0;
+  state.overReason = null;
   // state.mode/goalTarget/villainEnabled bewusst NICHT zurueckgesetzt: das sind die auf dem
   // Startbildschirm gewaehlten Einstellungen, die beim naechsten Klick auf Start ohnehin frisch
   // aus den Bedienelementen (goalInput/villainCheckbox) uebernommen werden (siehe oben).
