@@ -45,7 +45,7 @@
   <h1>Very Hungry ConcorPillar</h1>
   <p id="score"></p>
   <canvas id="board"></canvas>
-  <p id="hint">Pfeiltasten oder WASD steuern · Leertaste: Pause / Weiter / Neustart</p>
+  <p id="hint">Pfeiltasten/WASD oder Wischen steuern · Leertaste: Pause / Weiter / Neustart · Tippen nach Game Over: Neustart</p>
   <p id="info"></p>
 
 <script>
@@ -57,7 +57,16 @@
 const GRID = 20;               // 20 x 20 Felder
 const CELL = 24;               // logische Pixel pro Feld
 const BOARD_PX = GRID * CELL;  // 480 x 480 logische Pixel
-const TICK_MS = 150;           // Dauer eines Spielschritts (fester Platzhalter; wird in Paket 2 durch Start-/Höchsttempo + Beschleunigung ersetzt)
+
+// Tempo: Startwert, Untergrenze und Beschleunigung pro Futter an einer Stelle.
+// Alle drei Werte sind Richtwerte aus dem Konzept und NICHT mit Testpersonen geprueft -
+// siehe Testliste. Feinjustierung folgt, sobald ein paar Ungeuebte das Spiel probiert haben.
+const START_TICK_MS = 250;     // Dauer eines Schritts beim Spielstart (langsamer als die 150 ms der Woche-1-Demo)
+const MIN_TICK_MS = 90;        // schnellste erlaubte Geschwindigkeit (Untergrenze, wird nie unterschritten)
+const TICK_MS_STEP = 6;        // um so viel wird ein Schritt pro gefressenem Futter kuerzer
+
+// Mindest-Wischstrecke in echten Pixeln, ab der eine Beruehrung als Wisch (nicht als Tippen) zaehlt
+const SWIPE_MIN_PX = 24;
 
 // Eigene Farbpalette (Raupen-Thema, helles Blattgrün)
 const COLORS = {
@@ -99,11 +108,12 @@ const DIR_KEYS = {
 const state = {
   snake: [],                   // Feld-Koordinaten, Index 0 = Kopf
   dir: { x: 1, y: 0 },         // Richtung, die im aktuellen Tick tatsächlich angewendet wird
-  nextDir: { x: 1, y: 0 },     // durch Tastendruck vorgemerkte Richtung, wird zu Beginn des nächsten Tick übernommen
+  nextDir: { x: 1, y: 0 },     // durch Tastendruck/Wisch vorgemerkte Richtung, wird zu Beginn des nächsten Tick übernommen
   tick: 0,                     // Anzahl bisheriger Spielschritte
   score: 0,                    // Anzahl gefressenes Futter
   phase: 'ready',              // 'ready' | 'running' | 'paused' | 'over'
-  food: null                   // { x, y, type } - type ist der Index in FOOD
+  food: null,                  // { x, y, type } - type ist der Index in FOOD
+  tickMs: START_TICK_MS        // aktuelle Geschwindigkeit (sinkt mit dem Score bis MIN_TICK_MS)
 };
 
 // ---------------------------------------------------------------
@@ -129,9 +139,9 @@ function isOpposite(a, b) {
   return a.x === -b.x && a.y === -b.y;
 }
 
-// Wird von der Tastatursteuerung aufgerufen (und später auch von der Swipe-Steuerung in Paket 2).
+// Gemeinsame Richtungseingabe fuer Tastatur UND Swipe (Abschnitt 7 ruft beide Wege hierher).
 // Prüft die 180-Grad-Sperre immer gegen die tatsächlich aktive Richtung (state.dir), nie gegen
-// eine bereits vorgemerkte state.nextDir - so kann ein zweiter, schneller Tastendruck vor dem
+// eine bereits vorgemerkte state.nextDir - so kann ein zweiter, schneller Steuerbefehl vor dem
 // nächsten Tick keine Wende "durchschmuggeln", die in der Summe 180 Grad ergibt.
 function handleDirectionInput(dir) {
   if (state.phase === 'over' || state.phase === 'paused') return;
@@ -161,6 +171,19 @@ function gameOver() {
   stopLoop();
 }
 
+// Nach jedem gefressenen Futter neu berechnen. Aendert sich die Geschwindigkeit tatsaechlich
+// und laeuft der Loop gerade, wird er neu gestartet (stopLoop() dann startLoop()) - nie
+// laeuft ein zweiter Timer parallel zum ersten.
+function applyGrowthSpeedup() {
+  const newTickMs = Math.max(MIN_TICK_MS, START_TICK_MS - state.score * TICK_MS_STEP);
+  if (newTickMs === state.tickMs) return;
+  state.tickMs = newTickMs;
+  if (timerId !== null) {
+    stopLoop();
+    startLoop();
+  }
+}
+
 function update() {
   state.dir = state.nextDir;   // vorgemerkte Richtung genau einmal pro Tick übernehmen
   const head = state.snake[0];
@@ -186,6 +209,7 @@ function update() {
   if (willGrow) {
     state.score++;
     spawnFood();
+    applyGrowthSpeedup();
   } else {
     state.snake.pop();
   }
@@ -268,7 +292,7 @@ function drawCenteredText(text) {
 // Bleibt bewusst schlicht - der Stil wird erst in Woche 2 abgeglichen (siehe Konzept).
 function drawOverlay() {
   if (state.phase === 'ready') {
-    drawCenteredText('Richtungstaste drücken zum Start');
+    drawCenteredText('Richtung wählen zum Start');
   } else if (state.phase === 'paused') {
     drawCenteredText('Pause');
   } else if (state.phase === 'over') {
@@ -284,7 +308,7 @@ function draw() {
 }
 
 // ---------------------------------------------------------------
-// 6) Game-Loop (setInterval mit fixer Rate)
+// 6) Game-Loop (setInterval mit fixer Rate, Rate = state.tickMs)
 // ---------------------------------------------------------------
 let timerId = null;
 
@@ -294,7 +318,7 @@ function updateScore() {
 
 function updateInfo() {
   infoEl.textContent =
-    'Phase: ' + state.phase + ' · Tick ' + state.tick + ' · ' + TICK_MS + ' ms/Schritt · Punkte: ' + state.score;
+    'Phase: ' + state.phase + ' · Tick ' + state.tick + ' · ' + state.tickMs + ' ms/Schritt · Punkte: ' + state.score;
 }
 
 function step() {
@@ -306,7 +330,7 @@ function step() {
 
 function startLoop() {
   if (timerId !== null) return;
-  timerId = setInterval(step, TICK_MS);
+  timerId = setInterval(step, state.tickMs);
   updateInfo();
 }
 
@@ -329,7 +353,7 @@ function togglePause() {
 }
 
 // ---------------------------------------------------------------
-// 7) Ereignisse
+// 7) Ereignisse (Tastatur + Swipe - beide rufen dieselbe handleDirectionInput())
 // ---------------------------------------------------------------
 document.addEventListener('keydown', function (e) {
   const dir = DIR_KEYS[e.code];
@@ -348,8 +372,45 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
+// Swipe-Steuerung: Start- und Endpunkt der Beruehrung vergleichen, laengere Achse gewinnt.
+// Ein kurzes Tippen (unter SWIPE_MIN_PX) zaehlt nicht als Wisch - nach Game Over startet es
+// stattdessen neu (vorgezogener Behelf, bis es in Paket 3 einen richtigen Neustart-Button gibt).
+let touchStart = null;
+
+canvas.addEventListener('touchstart', function (e) {
+  e.preventDefault();
+  if (e.touches.length !== 1) return;
+  const t = e.touches[0];
+  touchStart = { x: t.clientX, y: t.clientY };
+}, { passive: false });
+
+canvas.addEventListener('touchmove', function (e) {
+  e.preventDefault();   // verhindert Scrollen/Ziehen der Seite waehrend des Wischens
+}, { passive: false });
+
+canvas.addEventListener('touchend', function (e) {
+  e.preventDefault();
+  if (!touchStart) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStart.x;
+  const dy = t.clientY - touchStart.y;
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+  touchStart = null;
+
+  if (Math.max(absDx, absDy) < SWIPE_MIN_PX) {
+    if (state.phase === 'over') resetGame();
+    return;
+  }
+
+  const dir = absDx > absDy
+    ? { x: dx > 0 ? 1 : -1, y: 0 }
+    : { x: 0, y: dy > 0 ? 1 : -1 };
+  handleDirectionInput(dir);
+}, { passive: false });
+
 // Tab im Hintergrund oder Bildschirm gesperrt: anhalten, nicht automatisch weiterlaufen.
-// Die Phase wird jetzt mitgesetzt (nicht nur der Timer gestoppt), sonst würde ein Tastendruck
+// Die Phase wird jetzt mitgesetzt (nicht nur der Timer gestoppt), sonst würde eine Eingabe
 // nach dem Zurückkommen sofort weiterlaufen, ohne dass "Pause" sichtbar war.
 document.addEventListener('visibilitychange', function () {
   if (document.hidden && state.phase === 'running') {
@@ -377,6 +438,7 @@ function resetGame() {
   state.score = 0;
   state.phase = 'ready';
   state.food = null;
+  state.tickMs = START_TICK_MS;
   spawnFood();
   draw();
   updateScore();
