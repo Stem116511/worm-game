@@ -27,15 +27,67 @@
   }
   h1 { margin: 0; font-size: 1.4rem; }
   #score { margin: 0; font-size: 1rem; font-weight: 600; }
+
+  #boardWrap {
+    position: relative;
+    width: min(94vw, 68vh, 560px);
+    aspect-ratio: 1 / 1;
+  }
   #board {
     display: block;
-    width: min(94vw, 68vh, 560px);
-    height: auto;
-    aspect-ratio: 1 / 1;
+    width: 100%;
+    height: 100%;
     border: 4px solid var(--board-border);
     border-radius: 12px;
     touch-action: none;
   }
+
+  /* Buttons: bewusst schlicht, wie die uebrigen Overlays - der Stil kommt erst im Woche-2-Abgleich */
+  .game-btn {
+    font: inherit;
+    font-weight: 600;
+    font-size: 1rem;
+    padding: 10px 24px;
+    border: none;
+    border-radius: 10px;
+    background: var(--board-border);
+    color: #1f2a1c;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .game-btn:active { filter: brightness(0.9); }
+
+  /* Zentriertes Overlay auf dem Canvas fuer Start (ready) und Neustart (over).
+     pointer-events:none auf dem Container, damit er ausserhalb des Panels nichts blockiert -
+     das Panel selbst holt sich pointer-events per Regel unten zurueck. Text und Button liegen
+     JETZT zusammen in diesem einen HTML-Panel (nicht mehr separat auf dem Canvas gezeichnet) -
+     sonst ueberlagern sich zwei unterschiedlich breite Elemente und der Text wirkt "zerhackt". */
+  #centerOverlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  #centerOverlay .panel {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    background: rgba(47, 61, 44, 0.85);
+    color: #f6f1e7;
+    padding: 16px 22px;
+    border-radius: 14px;
+  }
+  #overlayStatus { margin: 0; font-weight: 700; font-size: 1.05rem; white-space: nowrap; }
+
+  /* Fester Platz unter dem Feld fuer den Pause/Weiter-Button, damit nichts springt,
+     wenn er ein-/ausgeblendet wird. */
+  #controls { min-height: 48px; display: flex; align-items: center; justify-content: center; }
+  #pauseBtn { display: none; }
+
   #hint { margin: 0; font-size: 0.85rem; opacity: 0.75; text-align: center; }
   /* Entwicklerzeile: vor dem Anlass komplett entfernen */
   #info { margin: 0; font: 12px ui-monospace, Consolas, monospace; opacity: 0.55; text-align: center; }
@@ -44,8 +96,20 @@
 <body>
   <h1>Very Hungry ConcorPillar</h1>
   <p id="score"></p>
-  <canvas id="board"></canvas>
-  <p id="hint">Pfeiltasten/WASD oder Wischen steuern · Leertaste: Pause / Weiter / Neustart · Tippen nach Game Over: Neustart</p>
+  <div id="boardWrap">
+    <canvas id="board"></canvas>
+    <div id="centerOverlay">
+      <div class="panel">
+        <p id="overlayStatus"></p>
+        <button id="startBtn" class="game-btn" type="button">Start</button>
+        <button id="restartBtn" class="game-btn" type="button">Neustart</button>
+      </div>
+    </div>
+  </div>
+  <div id="controls">
+    <button id="pauseBtn" class="game-btn" type="button">Pause</button>
+  </div>
+  <p id="hint">Pfeiltasten/WASD oder Wischen steuern · Start/Pause/Neustart per Button oder Leertaste</p>
   <p id="info"></p>
 
 <script>
@@ -128,6 +192,11 @@ const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const infoEl = document.getElementById('info');
 const scoreEl = document.getElementById('score');
+const centerOverlay = document.getElementById('centerOverlay');
+const overlayStatus = document.getElementById('overlayStatus');
+const startBtn = document.getElementById('startBtn');
+const restartBtn = document.getElementById('restartBtn');
+const pauseBtn = document.getElementById('pauseBtn');
 
 function setupCanvas() {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -183,7 +252,7 @@ function applyGrowthSpeedup() {
   const newTickMs = Math.max(MIN_TICK_MS, START_TICK_MS - state.score * TICK_MS_STEP);
   if (newTickMs === state.tickMs) return;
   state.tickMs = newTickMs;
-  if (timerId !== null) {
+  if (loopActive) {
     stopLoop();
     startLoop();
   }
@@ -293,15 +362,12 @@ function drawCenteredText(text) {
   ctx.restore();
 }
 
-// Sichtbarer Hinweis auf dem Spielfeld selbst (zusätzlich zur Entwicklerzeile), je nach Spielphase.
-// Bleibt bewusst schlicht - der Stil wird erst in Woche 2 abgeglichen (siehe Konzept).
+// Sichtbarer Hinweis auf dem Spielfeld selbst. Nur noch fuer "Pause" - bei "ready" und "over"
+// steht der Text zusammen mit dem Button im HTML-Panel (siehe updateButtons()), damit sich nicht
+// zwei unterschiedlich breite Elemente (Canvas-Text + Button) gegenseitig ueberlagern.
 function drawOverlay() {
-  if (state.phase === 'ready') {
-    drawCenteredText('Richtung wählen zum Start');
-  } else if (state.phase === 'paused') {
+  if (state.phase === 'paused') {
     drawCenteredText('Pause');
-  } else if (state.phase === 'over') {
-    drawCenteredText('Game Over · ' + state.score + ' Punkte');
   }
 }
 
@@ -313,9 +379,22 @@ function draw() {
 }
 
 // ---------------------------------------------------------------
-// 6) Game-Loop (setInterval mit fixer Rate, Rate = state.tickMs)
+// 6) Game-Loop
 // ---------------------------------------------------------------
-let timerId = null;
+// Statt setInterval(step, state.tickMs) (feste Rate, die der Browser nur "ungefaehr" einhaelt -
+// je nach Auslastung des Tabs kommt ein Tick mal ein paar Millisekunden zu spaet, was sich als
+// gelegentliches kurzes Ruckeln bemerkbar macht) verwenden wir einen SELBSTKORRIGIERENDEN
+// setTimeout-Loop: er merkt sich den Zeitpunkt, zu dem der naechste Tick EIGENTLICH faellig waere
+// (expectedTickTime), und zieht eine etwaige Verspaetung (drift) von der naechsten Wartezeit ab.
+// So bleibt die Raupe im Mittel exakt beim eingestellten Tempo, auch wenn einzelne Ticks durch
+// kurze Aussetzer (z. B. Tab kurz im Hintergrund beschaeftigt) etwas zu spaet kommen - sie holt
+// die verlorene Zeit beim naechsten Tick wieder auf, statt den Fehler aufzusummieren. Bewusst
+// weiterhin EIN einfacher Timer (kein requestAnimationFrame) - das Konzept will hier bewusst das
+// einfachere Modell "ein Tick = ein Zeitgeber", nur eben mit Ausgleich statt blindem Vertrauen in
+// die Timer-Genauigkeit.
+let loopActive = false;
+let timeoutId = null;
+let expectedTickTime = 0;   // Zeitpunkt (performance.now()), zu dem der naechste Tick faellig ist
 
 function updateScore() {
   scoreEl.textContent = 'Punkte: ' + state.score;
@@ -326,24 +405,64 @@ function updateInfo() {
     'Phase: ' + state.phase + ' · Tick ' + state.tick + ' · ' + state.tickMs + ' ms/Schritt · Punkte: ' + state.score;
 }
 
+// Zeigt/versteckt Start-, Neustart- und Pause-Button je nach Spielphase, und setzt den
+// Status-Text im selben Panel wie Start/Neustart (siehe CSS-Kommentar zu #centerOverlay).
+// Wird ueberall dort aufgerufen, wo sich die Phase aendern kann (siehe startLoop/stopLoop/
+// step/resetGame unten).
+function updateButtons() {
+  const showCenter = state.phase === 'ready' || state.phase === 'over';
+  centerOverlay.style.display = showCenter ? 'flex' : 'none';
+  startBtn.style.display = state.phase === 'ready' ? 'inline-block' : 'none';
+  restartBtn.style.display = state.phase === 'over' ? 'inline-block' : 'none';
+  if (state.phase === 'ready') {
+    overlayStatus.textContent = 'Bereit?';
+  } else if (state.phase === 'over') {
+    overlayStatus.textContent = 'Game Over · ' + state.score + ' Punkte';
+  }
+
+  const showPause = state.phase === 'running' || state.phase === 'paused';
+  pauseBtn.style.display = showPause ? 'inline-block' : 'none';
+  pauseBtn.textContent = state.phase === 'paused' ? 'Weiter' : 'Pause';
+}
+
 function step() {
   update();
   draw();
   updateScore();
   updateInfo();
+  updateButtons();
+}
+
+// Fuehrt genau einen Tick aus und plant danach - falls der Loop noch laeuft - den naechsten,
+// mit einer Wartezeit, die eine etwaige Verspaetung des VORHERIGEN Ticks schon ausgleicht.
+function runTick() {
+  expectedTickTime += state.tickMs;
+  step();
+  if (loopActive) scheduleNextTick();
+}
+
+function scheduleNextTick() {
+  const drift = performance.now() - expectedTickTime;   // > 0, wenn wir bereits im Verzug sind
+  const delay = Math.max(0, state.tickMs - drift);
+  timeoutId = setTimeout(runTick, delay);
 }
 
 function startLoop() {
-  if (timerId !== null) return;
-  timerId = setInterval(step, state.tickMs);
+  if (loopActive) return;
+  loopActive = true;
+  expectedTickTime = performance.now();
+  scheduleNextTick();
   updateInfo();
+  updateButtons();
 }
 
 function stopLoop() {
-  if (timerId === null) return;
-  clearInterval(timerId);
-  timerId = null;
+  if (!loopActive) return;
+  loopActive = false;
+  clearTimeout(timeoutId);
+  timeoutId = null;
   updateInfo();
+  updateButtons();
 }
 
 function togglePause() {
@@ -358,7 +477,7 @@ function togglePause() {
 }
 
 // ---------------------------------------------------------------
-// 7) Ereignisse (Tastatur + Swipe - beide rufen dieselbe handleDirectionInput())
+// 7) Ereignisse (Tastatur + Swipe + Buttons - alle rufen dieselben Funktionen auf)
 // ---------------------------------------------------------------
 document.addEventListener('keydown', function (e) {
   const dir = DIR_KEYS[e.code];
@@ -377,13 +496,24 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
+// Start-, Neustart- und Pause-Button: dieselben Funktionen wie Tastatur/Swipe, nur ein anderer
+// Ausloeser. "Start" nutzt die aktuelle (Anfangs-)Richtung weiter, statt eine neue vorzugeben -
+// wer eine andere Richtung will, wischt oder drueckt stattdessen direkt eine Pfeiltaste.
+startBtn.addEventListener('click', function () {
+  if (state.phase === 'ready') handleDirectionInput(state.dir);
+});
+restartBtn.addEventListener('click', function () {
+  if (state.phase === 'over') resetGame();
+});
+pauseBtn.addEventListener('click', function () {
+  togglePause();
+});
+
 // Swipe-Steuerung: Die Richtung wird schon WAEHREND der Bewegung erkannt (touchmove), nicht erst
 // beim Loslassen (touchend). Bei hohem Tempo bleibt sonst kaum Zeit zwischen Tick und Reaktion.
 // Nach jeder erkannten Richtung wird der Referenzpunkt zurueckgesetzt, damit sich innerhalb
 // derselben Beruehrung (ohne loszulassen) noch weitere Richtungswechsel erkennen lassen.
-// Ein kurzes Tippen (Bewegung bleibt unter SWIPE_MIN_PX) zaehlt nicht als Wisch - nach Game Over
-// startet es stattdessen neu (vorgezogener Behelf, bis es in Paket 3 einen richtigen Neustart-Button gibt).
-let touchStartPoint = null;   // fix ab Beruehrungsbeginn, nur fuer die Tipp-Erkennung am Ende
+// Neustart per Tippen (Behelf aus Paket 2) entfaellt jetzt, da es den echten Neustart-Button gibt.
 let touchRef = null;          // wird nach jedem erkannten Wisch aktualisiert
 let sawSwipeThisTouch = false;
 
@@ -391,7 +521,6 @@ canvas.addEventListener('touchstart', function (e) {
   e.preventDefault();
   if (e.touches.length !== 1) return;
   const t = e.touches[0];
-  touchStartPoint = { x: t.clientX, y: t.clientY };
   touchRef = { x: t.clientX, y: t.clientY };
   sawSwipeThisTouch = false;
 }, { passive: false });
@@ -417,15 +546,6 @@ canvas.addEventListener('touchmove', function (e) {
 
 canvas.addEventListener('touchend', function (e) {
   e.preventDefault();
-  if (!sawSwipeThisTouch && touchStartPoint) {
-    const t = e.changedTouches[0];
-    const dx = t.clientX - touchStartPoint.x;
-    const dy = t.clientY - touchStartPoint.y;
-    if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE_MIN_PX && state.phase === 'over') {
-      resetGame();
-    }
-  }
-  touchStartPoint = null;
   touchRef = null;
   sawSwipeThisTouch = false;
 }, { passive: false });
@@ -464,6 +584,7 @@ function resetGame() {
   draw();
   updateScore();
   updateInfo();
+  updateButtons();
 }
 
 function init() {
