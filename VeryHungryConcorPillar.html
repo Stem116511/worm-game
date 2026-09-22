@@ -9,6 +9,12 @@
     --page-bg: #f6f1e7;
     --text: #2f3d2c;
     --board-border: #8fae6b;
+    /* Zwei zusaetzliche Konturringe ganz aussen um den Rand (Wunsch: Rand soll gut sichtbar sein) -
+       gleiche Breite wie die bestehende gruene Kontur (4px). Violett bewusst identisch mit dem
+       Boesewicht-Koerper (COLORS.villain.body.base = #7c3fb0 im Script weiter unten) gewaehlt, statt
+       eine neue Farbe zu erfinden - sag Bescheid, falls dir ein anderer Ton lieber waere.       */
+    --board-border-outer1: #ffffff;
+    --board-border-outer2: #7c3fb0;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
@@ -32,6 +38,9 @@
     position: relative;
     width: min(94vw, 68vh, 560px);
     aspect-ratio: 1 / 1;
+    /* Reserviert echten Platz im Layout fuer die beiden zusaetzlichen Konturringe (siehe #board
+       box-shadow) - sonst wuerden sie ueber H1/Buttons ueberlappen statt sauber Abstand zu halten. */
+    margin: 8px;
   }
   #board {
     display: block;
@@ -40,6 +49,12 @@
     border: 4px solid var(--board-border);
     border-radius: 12px;
     touch-action: none;
+    /* Zwei weitere Ringe AUSSERHALB der bestehenden gruenen Kontur, per box-shadow (kein
+       zusaetzliches HTML-Element noetig): je 4px breit, wie gewuenscht gleich breit wie die gruene
+       Kontur - zuerst weiss (direkt aussen an gruen), danach violett ganz aussen. Bei mehreren
+       box-shadow-Werten liegt der ZUERST genannte oben, deshalb weiss vor violett listen, sonst
+       wuerde violett den weissen Ring komplett verdecken. */
+    box-shadow: 0 0 0 4px var(--board-border-outer1), 0 0 0 8px var(--board-border-outer2);
   }
 
   /* Buttons: bewusst schlicht, wie die uebrigen Overlays - der Stil kommt erst im Woche-2-Abgleich */
@@ -156,7 +171,20 @@
 // ---------------------------------------------------------------
 const GRID = 20;               // 20 x 20 Felder
 const CELL = 24;               // logische Pixel pro Feld
-const BOARD_PX = GRID * CELL;  // 480 x 480 logische Pixel
+const BOARD_PX = GRID * CELL;  // 480 x 480 logische Pixel (reines Spielfeld-Raster, unveraendert -
+                                // Kollision/Spawn-Logik rechnet weiterhin ausschliesslich hiermit)
+
+// Sicherheitsrand rund um das Spielfeld-Raster (nur fuer's Zeichnen, siehe draw() weiter unten).
+// Hintergrund: Boesewicht (VILLAIN_RADIUS_FACTOR) und Futter-Icons (FOOD_ICON_SIZE_FACTOR) sind
+// bewusst groesser als eine Zelle und duerfen ueber die Zellgrenze hinausragen (siehe Kommentare
+// dort) - stehen sie dabei in einer Rand-Zelle, wurden Hoernchen/Arme bisher an der Canvas-Kante
+// hart abgeschnitten (per Definition eines <canvas>: alles ausserhalb der Bitmap-Flaeche wird nicht
+// gezeichnet, das laesst sich nicht per CSS umgehen). Per Playwright-Pixelmessung (siehe Chat)
+// ragt der Boesewicht in einer Rand-Zelle max. ~22px ueber die Spielfeld-Kante hinaus (Hoernchen
+// nach oben) - CANVAS_MARGIN daher grosszuegig auf 1.5 Zellen gesetzt, mit etwas Puffer fuer
+// zukuenftige Elemente (z. B. den geplanten Schmetterling).
+const CANVAS_MARGIN = CELL * 1.5;    // 36px bei CELL=24
+const CANVAS_PX = BOARD_PX + CANVAS_MARGIN * 2;  // Gesamte Zeichenflaeche inkl. Rand (552px)
 
 // Tempo: Startwert, Untergrenze und Beschleunigung pro Futter an einer Stelle.
 // Alle drei Werte sind Richtwerte aus dem Konzept und NICHT mit Testpersonen geprueft -
@@ -191,14 +219,35 @@ const VILLAIN_COOLDOWN_TICKS = 20;   // Pause nach dem Verschwinden, bevor er er
 // Stil"). Der Kopf ist zusaetzlich etwas groesser (+0.06).
 const SNAKE_RADIUS_FACTOR = 0.56;
 
+// Radius-Faktor des Boesewicht-Koerpers relativ zu CELL - aus der bestaetigten Stilprobe
+// uebernommen (siehe stilprobe-villain.html, per SendUserFile an Marco geliefert). Iterativ auf
+// Wunsch zweimal vergroessert (0.46 -> 0.6 -> 0.75), damit die Figur neben Raupenkopf
+// (SNAKE_RADIUS_FACTOR + 0.06 = 0.62) und den Futter-Icons (FOOD_ICON_SIZE_FACTOR 1.75) nicht zu
+// klein wirkt. Betrifft NUR die Zeichengroesse, nicht die Kollisionserkennung (siehe update():
+// die prueft weiterhin exakte Gitter-Zellen-Gleichheit, unabhaengig vom Zeichenradius) - wie bei
+// den Futter-Icons ist die sichtbare Figur bewusst groesser als ihr Kollisionsfeld.
+const VILLAIN_RADIUS_FACTOR = 0.75;
+
 // Farbpalette: Board-Hintergrund unveraendert, Raupen-Farben aus der von Marco bestaetigten
 // Stilprobe uebernommen (siehe stilprobe-raupe-bestaetigt.md) - ersetzt die bisherigen
 // Platzhalter-Flaechenfarben (bodyA/bodyB/head als einzelne Hex-Werte) durch Farbverlaufs-Objekte
 // {hi, base, lo}, die bodyFill() fuer die Kugel-Wirkung braucht. food-Unterobjekt aus
 // stilprobe-futter-bausteine.md, fuer die drei bereits gestalteten Futter-Icons (Pizza, Eis, Bier).
+// villain-Unterobjekt (neu): aus der bestaetigten Boesewicht-Stilprobe (stilprobe-villain.html) -
+// ersetzt den bisherigen einzelnen Platzhalter-Hex-Wert. outline/hornOutline/toothOutline/
+// swordOutline der Stilprobe waren dort alle identisch ('#2a1033') und wurden deshalb hier zu
+// einem gemeinsamen villain.outline zusammengefasst (kleine bewusste Vereinfachung beim Uebertrag,
+// keine optische Aenderung). appleOutline/stem/leaf der Stilprobe entsprachen exakt den bereits
+// vorhandenen food.o/food.meatball/food.basil-Werten - deshalb beim Uebertrag direkt auf food.*
+// verwiesen statt sie nochmals zu duplizieren (siehe drawVillainApple() weiter unten).
 const COLORS = {
   boardA: '#e4edcf',
   boardB: '#d9e5bd',
+  // Farbe des neuen Sicherheitsrands (CANVAS_MARGIN) rund um das Karo-Raster - identisch mit der
+  // Seiten-Hintergrundfarbe (CSS-Variable --page-bg), damit der Rand optisch mit der Seite
+  // verschmilzt statt als zusaetzlicher sichtbarer Rahmen aufzufallen. Feinschliff (z. B. ein
+  // sanfter Farbverlauf zum Karo hin) bewusst zurueckgestellt, siehe Reflexion im Chat.
+  canvasMargin: '#f6f1e7',
   shadow: 'rgba(47, 61, 44, 0.28)',
   outline: '#2f5f2c',            // gruene Kontur der Koerperglieder (nicht Kopf/Fuehler-Spitzen)
   bands: [
@@ -214,7 +263,16 @@ const COLORS = {
   cheek: 'rgba(226, 84, 138, 0.8)',
   dot: 'rgba(255, 255, 255, 0.6)',
   morphoBlue: '#1f5fe0',         // reserviert für den Schmetterling am Ende des Ziel-Modus
-  villain: '#5b2a86',            // Platzhalter-Farbe fuer den Boesewicht, echtes Design folgt spaeter
+  villain: {
+    body: { hi: '#c9a6ff', base: '#7c3fb0', lo: '#43195e' },
+    outline: '#2a1033',
+    horn: { hi: '#9a6fd6', base: '#5b2a86', lo: '#301048' },
+    brow: '#1a0e22',
+    tooth: '#fff8ec',
+    apple: { hi: '#ff8a75', base: '#e2402b', lo: '#8f1d16' },
+    swordMetal: { hi: '#f2eef8', base: '#b9b2cc', lo: '#635c78' },
+    swordHilt: '#4a2a16'
+  },
   food: {
     o: '#4a2a16',
     crustHi: '#f0c878', crust: '#d49a3a',
@@ -247,6 +305,25 @@ const COLORS = {
     bananaHi: '#fff3a0', banana: '#f4cf3c', bananaTip: '#8a6a2a',
     // Gummibaerchen
     gummyHi: '#ff9d8a', gummy: '#e2432f'
+  },
+  // Wiesen-Deko im Sicherheitsrand (CANVAS_MARGIN, siehe unten) - aus der bestaetigten Stilprobe
+  // stilprobe-rahmen-pflanzen.html uebernommen. Eigene, von COLORS.bands (Raupe) ENTKOPPELTE
+  // Gruentoene, damit ein spaeteres Nachjustieren der Wiese nicht versehentlich die Raupe
+  // mitveraendert. Bewusst gedaempft/pastellig gehalten (mehrere Iterationen mit Marco), damit die
+  // Wiese als ruhiger Rahmen wirkt statt Aufmerksamkeit vom Spielfeld abzuziehen - Kontur deshalb
+  // auch etwas weicher (olivgruen) statt des kraeftigen COLORS.outline.
+  meadow: {
+    outline: '#5c6a4f',
+    greens: [
+      { hi: '#e6f2cf', base: '#c6dea1', lo: '#98bd77' },
+      { hi: '#daedbf', base: '#b8d597', lo: '#8cb56c' }
+    ],
+    strawHi: '#ece0bf', straw: '#d3c294', strawLo: '#ab9b6c',
+    cloverHi: '#ddedd8', clover: '#b3d0ad', cloverLo: '#87ae81',
+    petalHi: '#f3dde3', petal: '#dcb9c4', petalLo: '#b98f9c',
+    dotFlowerCol: '#fbf8ee', dotFlowerCenter: '#e6d3a3',
+    starHi: '#f0e8c8', star: '#d9c896', starLo: '#b3a26e',
+    bellHi: '#dde1ee', bell: '#b3bbdb', bellLo: '#8a92b8'
   }
 };
 
@@ -599,8 +676,8 @@ const pauseBtn = document.getElementById('pauseBtn');
 
 function setupCanvas() {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
-  canvas.width = BOARD_PX * dpr;   // setzt die Zeichenfläche zurück ...
-  canvas.height = BOARD_PX * dpr;
+  canvas.width = CANVAS_PX * dpr;   // setzt die Zeichenfläche zurück ...
+  canvas.height = CANVAS_PX * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);  // ... daher Skalierung danach setzen
 }
 
@@ -798,26 +875,9 @@ function drawFood() {
   ctx.fill();
 }
 
-// Platzhalter-Darstellung fuer den Boesewicht (einfacher dunkler Kreis mit zwei Augen) - echtes
-// Design folgt in einer spaeteren Stilprobe-Runde, genau wie bei den restlichen Futter-Sorten.
-function drawVillain() {
-  if (!state.villainEnabled || !state.villain) return;
-  const v = state.villain;
-  const cx = v.x * CELL + CELL / 2;
-  const cy = v.y * CELL + CELL / 2;
-  ctx.fillStyle = COLORS.villain;
-  ctx.beginPath();
-  ctx.arc(cx, cy, CELL * 0.42, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.arc(cx - CELL * 0.15, cy - CELL * 0.08, CELL * 0.09, 0, Math.PI * 2);
-  ctx.arc(cx + CELL * 0.15, cy - CELL * 0.08, CELL * 0.09, 0, Math.PI * 2);
-  ctx.fill();
-}
-
 // Radialer Farbverlauf (hell oben links, dunkler zum Rand) fuer die Kugel-Wirkung der
 // Koerperglieder, des Kopfs und der Fuehler-Spitzen - aus der bestaetigten Stilprobe uebernommen.
+// Wird jetzt auch vom Boesewicht-Design (drawVillain() und Helfer weiter unten) wiederverwendet.
 function bodyFill(cx, cy, r, col) {
   const g = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.08, cx, cy, r);
   g.addColorStop(0, col.hi);
@@ -825,6 +885,633 @@ function bodyFill(cx, cy, r, col) {
   g.addColorStop(1, col.lo);
   return g;
 }
+
+// ---------------------------------------------------------------
+// 5b) Boesewicht: eigenstaendiges Design (aus der bestaetigten Stilprobe stilprobe-villain.html
+// uebernommen, siehe COLORS.villain oben) - ersetzt den bisherigen Platzhalter (einfacher
+// dunkler Kreis mit zwei weissen Augen).
+// ---------------------------------------------------------------
+
+// Ein Hoernchen: schmaler, spitz zulaufender Verlaufs-Keil, der knapp an der Koerper-Oberflaeche
+// ansetzt und sich leicht nach aussen biegt. "side" -1/1 = links/rechts, "lenFactor" erlaubt
+// bewusste Asymmetrie (rechtes Horn etwas laenger/schiefer fuer einen frecheren statt
+// symmetrisch-braven Eindruck).
+function drawVillainHorn(cx, cy, r, side, lenFactor) {
+  const baseX = cx + side * r * 0.4, baseY = cy - r * 0.75;
+  const midX = cx + side * r * 0.68, midY = cy - r * (1.05 * lenFactor);
+  const tipX = cx + side * r * 0.34, tipY = cy - r * (1.55 * lenFactor);
+  const halfW = r * 0.15;
+
+  const dx = midX - baseX, dy = midY - baseY;
+  const dlen = Math.hypot(dx, dy) || 1;
+  const px = -dy / dlen, py = dx / dlen;
+
+  ctx.beginPath();
+  ctx.moveTo(baseX - px * halfW, baseY - py * halfW);
+  ctx.quadraticCurveTo(midX - px * halfW * 0.5, midY - py * halfW * 0.5, tipX, tipY);
+  ctx.quadraticCurveTo(midX + px * halfW * 0.5, midY + py * halfW * 0.5, baseX + px * halfW, baseY + py * halfW);
+  ctx.closePath();
+  ctx.fillStyle = bodyFill(midX, midY, r * 0.55, COLORS.villain.horn);
+  ctx.fill();
+  ctx.lineWidth = Math.max(1.1, r * 0.055);
+  ctx.strokeStyle = COLORS.villain.outline;
+  ctx.stroke();
+}
+
+// Schraege Augenbraue: kurzer, dicker Strich mit rundem Ende - traegt zusammen mit dem
+// unterschiedlichen "squint" der Augen (siehe drawVillainEye()) zum listigen Ausdruck bei.
+function drawVillainBrow(cx, cy, r, side, tiltDeg) {
+  const ex = cx + side * r * 0.36, ey = cy - r * 0.14;
+  const len = r * 0.32;
+  const rad = (tiltDeg * side) * Math.PI / 180;
+  const dx = Math.cos(rad) * side, dy = -Math.abs(Math.sin(rad)) - 0.15;
+  const dlen = Math.hypot(dx, dy) || 1;
+  const ux = dx / dlen, uy = dy / dlen;
+
+  ctx.strokeStyle = COLORS.villain.brow;
+  ctx.lineWidth = Math.max(1.6, r * 0.085);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(ex - ux * len * 0.5, ey - uy * len * 0.5);
+  ctx.lineTo(ex + ux * len * 0.5, ey + uy * len * 0.5);
+  ctx.stroke();
+}
+
+// Ein Auge: weisser Kreis + dunkle Pupille (nutzt die bereits vorhandenen COLORS.eyeWhite/
+// eyePupil der Raupe mit). Unterschiedliche "squint"-Werte pro Seite (rechtes Auge etwas
+// schmaler) tragen zusammen mit der schiefen Braue zum listigen Ausdruck bei.
+function drawVillainEye(cx, cy, r, side, squint) {
+  const ex = cx + side * r * 0.36, ey = cy + r * 0.02;
+  const eyeRx = r * (side === 1 ? 0.16 : 0.19);
+  const eyeRy = eyeRx * (1 - squint);
+
+  ctx.fillStyle = COLORS.eyeWhite;
+  ctx.beginPath();
+  ctx.ellipse(ex, ey, eyeRx, eyeRy, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = COLORS.eyePupil;
+  ctx.beginPath();
+  ctx.ellipse(ex + side * eyeRx * 0.15, ey, eyeRx * 0.52, eyeRy * 0.68, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// Schiefes Grinsen: eine Seite hoeher gezogen als die andere, dort zwei kleine spitze
+// Zaehnchen - wirkt frech/schelmisch statt bedrohlich.
+function drawVillainGrin(cx, cy, r) {
+  const y0 = cy + r * 0.42;
+  const leftX = cx - r * 0.34, rightX = cx + r * 0.4;
+  const dipY = y0 + r * 0.08;
+  const highY = y0 - r * 0.1;
+
+  ctx.strokeStyle = COLORS.eyePupil;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(1.3, r * 0.07);
+  ctx.beginPath();
+  ctx.moveTo(leftX, y0);
+  ctx.quadraticCurveTo(cx, dipY, rightX, highY);
+  ctx.stroke();
+
+  const toothW = r * 0.09, toothH = r * 0.13;
+  function tooth(tx, ty) {
+    ctx.beginPath();
+    ctx.moveTo(tx - toothW, ty);
+    ctx.lineTo(tx + toothW, ty);
+    ctx.lineTo(tx, ty + toothH);
+    ctx.closePath();
+    ctx.fillStyle = COLORS.villain.tooth;
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = COLORS.villain.outline;
+    ctx.stroke();
+  }
+  tooth(rightX - r * 0.16, highY + r * 0.03);
+  tooth(rightX - r * 0.32, highY + r * 0.07);
+}
+
+// Arm mit Hand (links), haelt einen Apfel als Lockmittel vor den Koerper (Bezug zum
+// Endbildschirm-Text "It was a trap! There was no food!"). Wird NACH der Koerper-Kugel
+// gezeichnet (siehe drawVillain() unten) - liegt also sichtbar vorne. Gibt die Handposition
+// zurueck, damit drawVillainApple() den Apfel exakt darueber platzieren kann.
+function drawVillainArm(cx, cy, r) {
+  const baseX = cx - r * 0.78, baseY = cy + r * 0.32;
+  const handX = cx - r * 1.32, handY = cy + r * 0.34;
+  const halfW = r * 0.16;
+
+  const dx = handX - baseX, dy = handY - baseY;
+  const dlen = Math.hypot(dx, dy) || 1;
+  const px = -dy / dlen, py = dx / dlen;
+  const midX = (baseX + handX) / 2, midY = (baseY + handY) / 2 - r * 0.1;
+
+  ctx.beginPath();
+  ctx.moveTo(baseX - px * halfW, baseY - py * halfW);
+  ctx.quadraticCurveTo(midX - px * halfW * 0.9, midY - py * halfW * 0.9, handX - px * halfW * 0.6, handY - py * halfW * 0.6);
+  ctx.lineTo(handX + px * halfW * 0.6, handY + py * halfW * 0.6);
+  ctx.quadraticCurveTo(midX + px * halfW * 0.9, midY + py * halfW * 0.9, baseX + px * halfW, baseY + py * halfW);
+  ctx.closePath();
+  ctx.fillStyle = bodyFill(midX, midY, r * 0.5, COLORS.villain.body);
+  ctx.fill();
+  ctx.lineWidth = Math.max(1.1, r * 0.06);
+  ctx.strokeStyle = COLORS.villain.outline;
+  ctx.stroke();
+
+  const handR = r * 0.24;
+  ctx.beginPath();
+  ctx.arc(handX, handY, handR, 0, Math.PI * 2);
+  ctx.fillStyle = bodyFill(handX, handY, handR, COLORS.villain.body);
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, r * 0.05);
+  ctx.strokeStyle = COLORS.villain.outline;
+  ctx.stroke();
+
+  return { x: handX, y: handY };
+}
+
+// Apfel-Lockmittel: kleine rote Verlaufs-Kugel, Stiel, Blatt, Glanzpunkt - ueberlappt leicht die
+// Hand, damit es aussieht, als wuerde er ihn dem Betrachter entgegenstrecken. Stiel/Blatt-Kontur
+// nutzen bewusst die bereits vorhandenen COLORS.food.o/meatball/basil mit (identische Hex-Werte
+// wie in der Stilprobe, siehe Kommentar bei COLORS oben) statt sie zu duplizieren.
+function drawVillainApple(hand, r) {
+  const appleR = r * 0.28;
+  const ax = hand.x - r * 0.02, ay = hand.y - r * 0.34;
+
+  ctx.beginPath();
+  ctx.arc(ax, ay, appleR, 0, Math.PI * 2);
+  ctx.fillStyle = bodyFill(ax, ay, appleR, COLORS.villain.apple);
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, r * 0.05);
+  ctx.strokeStyle = COLORS.food.o;
+  ctx.stroke();
+
+  ctx.strokeStyle = COLORS.food.meatball;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(1, r * 0.045);
+  ctx.beginPath();
+  ctx.moveTo(ax, ay - appleR * 0.92);
+  ctx.lineTo(ax + appleR * 0.22, ay - appleR * 1.55);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.ellipse(ax + appleR * 0.55, ay - appleR * 1.35, appleR * 0.4, appleR * 0.2, -0.5, 0, Math.PI * 2);
+  ctx.fillStyle = COLORS.food.basil;
+  ctx.fill();
+  ctx.lineWidth = 0.8;
+  ctx.strokeStyle = COLORS.food.o;
+  ctx.stroke();
+
+  ctx.fillStyle = COLORS.dot;
+  ctx.beginPath();
+  ctx.arc(ax - appleR * 0.32, ay - appleR * 0.32, appleR * 0.28, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// Schwert, gehalten von der Hand des zweiten Arms: Griff (dunkles Holz), kleine Querstrebe
+// (Stichblatt), spitz zulaufende Klinge mit Metall-Verlauf, kleiner Knauf am Griffende. Die
+// Ausrichtung ist bewusst FEST senkrecht (nach oben), unabhaengig von der Armrichtung (Wunsch:
+// "Dolch vertikal aufrichten" statt liegend in Verlaengerung des Arms) - der Arm reicht
+// weiterhin normal nach rechts, nur das Schwert selbst steht aufrecht in der Hand.
+function drawVillainSword(handX, handY, r) {
+  const ux = 0, uy = -1;
+  const px = -uy, py = ux;
+  const hiltLen = r * 0.22;
+  const gripEndX = handX + ux * hiltLen, gripEndY = handY + uy * hiltLen;
+
+  ctx.strokeStyle = COLORS.villain.swordHilt;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(2, r * 0.09);
+  ctx.beginPath();
+  ctx.moveTo(handX, handY);
+  ctx.lineTo(gripEndX, gripEndY);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(handX - ux * r * 0.06, handY - uy * r * 0.06, r * 0.09, 0, Math.PI * 2);
+  ctx.fillStyle = COLORS.villain.swordHilt;
+  ctx.fill();
+
+  const guardHalf = r * 0.26;
+  ctx.strokeStyle = COLORS.villain.outline;
+  ctx.lineWidth = Math.max(1.6, r * 0.06);
+  ctx.beginPath();
+  ctx.moveTo(gripEndX - px * guardHalf, gripEndY - py * guardHalf);
+  ctx.lineTo(gripEndX + px * guardHalf, gripEndY + py * guardHalf);
+  ctx.stroke();
+
+  const bladeLen = r * 1.05, bladeHalfW = r * 0.11;
+  const tipX = gripEndX + ux * bladeLen, tipY = gripEndY + uy * bladeLen;
+  ctx.beginPath();
+  ctx.moveTo(gripEndX - px * bladeHalfW, gripEndY - py * bladeHalfW);
+  ctx.lineTo(tipX, tipY);
+  ctx.lineTo(gripEndX + px * bladeHalfW, gripEndY + py * bladeHalfW);
+  ctx.closePath();
+  ctx.fillStyle = bodyFill((gripEndX + tipX) / 2, (gripEndY + tipY) / 2, bladeLen * 0.4, COLORS.villain.swordMetal);
+  ctx.fill();
+  ctx.lineWidth = Math.max(1.1, r * 0.045);
+  ctx.strokeStyle = COLORS.villain.outline;
+  ctx.stroke();
+}
+
+// Zweiter Arm (rechte Seite, Gegenstueck zum Apfel-Arm links), haelt das Schwert. Ganz normal
+// nach rechts ausgestreckt (gleiche Grundgeometrie wie der Apfel-Arm, nur gespiegelt) - der
+// raeumliche "weiter hinten"-Eindruck entsteht NICHT durch eine andere Armhaltung, sondern
+// dadurch, dass diese Funktion (anders als drawVillainArm/drawVillainApple) VOR der
+// Koerper-Kugel aufgerufen wird (siehe drawVillain() unten): der Armansatz liegt innerhalb des
+// Koerper-Radius und wird von der Kugel ueberdeckt, waehrend Hand und Schwert deutlich
+// ausserhalb liegen und damit sichtbar bleiben - genau wie bei den Hoernchen, nur seitlich
+// statt oben.
+function drawVillainSwordArm(cx, cy, r) {
+  const side = 1;
+  const baseX = cx + side * r * 0.78, baseY = cy + r * 0.32;
+  const handX = cx + side * r * 1.32, handY = cy + r * 0.34;
+  const halfW = r * 0.16;
+
+  const dx = handX - baseX, dy = handY - baseY;
+  const dlen = Math.hypot(dx, dy) || 1;
+  const px = -dy / dlen, py = dx / dlen;
+  const midX = (baseX + handX) / 2, midY = (baseY + handY) / 2 - r * 0.1;
+
+  ctx.beginPath();
+  ctx.moveTo(baseX - px * halfW, baseY - py * halfW);
+  ctx.quadraticCurveTo(midX - px * halfW * 0.9, midY - py * halfW * 0.9, handX - px * halfW * 0.6, handY - py * halfW * 0.6);
+  ctx.lineTo(handX + px * halfW * 0.6, handY + py * halfW * 0.6);
+  ctx.quadraticCurveTo(midX + px * halfW * 0.9, midY + py * halfW * 0.9, baseX + px * halfW, baseY + py * halfW);
+  ctx.closePath();
+  ctx.fillStyle = bodyFill(midX, midY, r * 0.5, COLORS.villain.body);
+  ctx.fill();
+  ctx.lineWidth = Math.max(1.1, r * 0.06);
+  ctx.strokeStyle = COLORS.villain.outline;
+  ctx.stroke();
+
+  const handR = r * 0.24;
+  ctx.beginPath();
+  ctx.arc(handX, handY, handR, 0, Math.PI * 2);
+  ctx.fillStyle = bodyFill(handX, handY, handR, COLORS.villain.body);
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, r * 0.05);
+  ctx.strokeStyle = COLORS.villain.outline;
+  ctx.stroke();
+
+  drawVillainSword(handX, handY, r);
+}
+
+// Gesamter Boesewicht (ersetzt den bisherigen Platzhalter): Schatten, Hoernchen + Schwert-Arm
+// (zuerst, damit die Koerper-Kugel danach ihre jeweilige Basis ueberdeckt - gleiches Prinzip wie
+// die Fuehler der Raupe), dann die Koerper-Kugel selbst mit Verlauf + Kontur, Glanzpunkt,
+// Gesicht, zuletzt Apfel-Arm (liegt dadurch sicher vorne, auch dort wo er den Koerperrand
+// ueberlappt - bewusster Kontrast zum Schwert-Arm, der stattdessen hinter der Kugel liegt).
+function drawVillain() {
+  if (!state.villainEnabled || !state.villain) return;
+  const v = state.villain;
+  const cx = v.x * CELL + CELL / 2;
+  const cy = v.y * CELL + CELL / 2;
+  const r = CELL * VILLAIN_RADIUS_FACTOR;
+
+  ctx.fillStyle = COLORS.shadow;
+  ctx.beginPath();
+  ctx.ellipse(cx + 1, cy + r * 0.86, r * 0.85, r * 0.42, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  drawVillainHorn(cx, cy, r, -1, 0.95);
+  drawVillainHorn(cx, cy, r, 1, 1.18);
+  drawVillainSwordArm(cx, cy, r);
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = bodyFill(cx, cy, r, COLORS.villain.body);
+  ctx.fill();
+  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = COLORS.villain.outline;
+  ctx.stroke();
+
+  ctx.fillStyle = COLORS.dot;
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.38, cy - r * 0.4, r * 0.17, 0, Math.PI * 2);
+  ctx.fill();
+
+  drawVillainBrow(cx, cy, r, -1, 18);
+  drawVillainBrow(cx, cy, r, 1, 34);
+  drawVillainEye(cx, cy, r, -1, 0.05);
+  drawVillainEye(cx, cy, r, 1, 0.3);
+  drawVillainGrin(cx, cy, r);
+
+  const hand = drawVillainArm(cx, cy, r);
+  drawVillainApple(hand, r);
+}
+
+// ---------------------------------------------------------------
+// 5c) Wiese im Sicherheitsrand (aus der bestaetigten Stilprobe stilprobe-rahmen-pflanzen.html
+// uebernommen, siehe COLORS.meadow oben). Ersetzt den bisher schlichten einfarbigen Rand
+// (COLORS.canvasMargin) durch eine dichte, ueberlappende Wiesen-Deko aus 4 Grashalm- und 4
+// Blueten-Typen. WICHTIG zur Performance: diese ~1000+ ueberlappenden Formen werden NICHT jeden
+// Tick neu berechnet (das waere bei 4-6 Zeichen-Operationen pro Buschel ein spuerbarer Mehraufwand
+// auf jedem Tick, gerade auf Handys) - stattdessen einmalig beim Laden auf eine unsichtbare
+// Offscreen-Canvas (meadowCache) vorgerendert, und draw() zeichnet davon pro Tick nur noch ein
+// einziges fertiges Bild (ctx.drawImage), genau wie ein Foto statt es jedes Mal neu zu malen. Die
+// Wiese ist deterministisch (fester Pseudozufalls-Seed, siehe mulberry32) - deshalb ist ein
+// einmaliges Vorrendern ueberhaupt moeglich, sie sieht nie zweimal unterschiedlich aus.
+//
+// Abweichung von der sonstigen Codebasis: die Helfer-Funktionen hier bekommen bewusst "ctx" als
+// Parameter uebergeben (anders als z. B. bodyFill() oder die Boesewicht-Funktionen, die die globale
+// ctx-Konstante direkt nutzen) - noetig, weil sie sowohl auf die echte Spiel-Canvas als auch auf die
+// unsichtbare Offscreen-Canvas zeichnen koennen muessen.
+// ---------------------------------------------------------------
+
+// Kleiner deterministischer Pseudozufallsgenerator (Mulberry32) - liefert bei gleichem "seed" IMMER
+// dieselbe Zahlenfolge. Damit sieht die Wiese bei jedem draw()/Neuladen exakt gleich aus (kein
+// "Flackern" durch echten Zufall).
+function meadowRandom(seed) {
+  let a = seed;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Gleiche Verlaufstechnik wie bodyFill(), nur mit explizitem ctx-Parameter (siehe Abweichung oben).
+function meadowBodyFill(mctx, cx, cy, r, col) {
+  const g = mctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.08, cx, cy, r);
+  g.addColorStop(0, col.hi);
+  g.addColorStop(0.55, col.base);
+  g.addColorStop(1, col.lo);
+  return g;
+}
+
+// Ein einzelner Grashalm: schmaler, spitz zulaufender Verlaufs-Keil - gleiche Technik wie die
+// Boesewicht-Hoernchen (tapered wedge).
+function drawMeadowBlade(mctx, baseX, baseY, angleDeg, len, halfWFactor, col) {
+  const rad = angleDeg * Math.PI / 180;
+  const ux = Math.sin(rad), uy = -Math.cos(rad);
+  const px = -uy, py = ux;
+  const tipX = baseX + ux * len, tipY = baseY + uy * len;
+  const bendX = baseX + ux * len * 0.55 + px * len * 0.18, bendY = baseY + uy * len * 0.55 + py * len * 0.18;
+  const halfW = len * halfWFactor;
+
+  mctx.beginPath();
+  mctx.moveTo(baseX - px * halfW, baseY - py * halfW);
+  mctx.quadraticCurveTo(bendX - px * halfW * 0.4, bendY - py * halfW * 0.4, tipX, tipY);
+  mctx.quadraticCurveTo(bendX + px * halfW * 0.4, bendY + py * halfW * 0.4, baseX + px * halfW, baseY + py * halfW);
+  mctx.closePath();
+  mctx.fillStyle = meadowBodyFill(mctx, bendX, bendY, len * 0.5, col);
+  mctx.fill();
+  // Konturbreite relativ zur tatsaechlichen Halmbreite (halfW), NICHT absolut - sonst wuerde die
+  // Kontur bei duennen Halm-Typen das gesamte Fuellfarben-Verlauf verdecken.
+  mctx.lineWidth = Math.max(0.6, halfW * 0.4);
+  mctx.strokeStyle = COLORS.meadow.outline;
+  mctx.stroke();
+}
+
+// Halm-Typ 1: kompakter Faecher, 4-5 Halme
+// "baseAngle" (Grad, 0 = senkrecht nach oben) erlaubt es, die Wuchsrichtung des GANZEN Buendels zu
+// drehen - genutzt fuer die Seitenstreifen (links/rechts), deren Gras statt nach oben seitlich INS
+// Spielfeld hineinwachsen soll (siehe drawMeadowStrip/buildMeadowCache weiter unten).
+function drawMeadowGrassTuft1(mctx, cx, cy, scale, seed, baseAngle) {
+  const rnd = meadowRandom(seed);
+  const count = 4 + Math.floor(rnd() * 2);
+  const spread = 55;
+  const lean = (baseAngle || 0) + (rnd() - 0.5) * 20;
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0.5 : i / (count - 1);
+    const angle = lean - spread / 2 + t * spread + (rnd() - 0.5) * 8;
+    const len = (12 + rnd() * 7) * scale;
+    drawMeadowBlade(mctx, cx, cy, angle, len, 0.09, COLORS.meadow.greens[i % 2]);
+  }
+}
+
+// Halm-Typ 2: duenne, hoehere Einzelhalme (2-3 Stueck)
+function drawMeadowGrassTuft2(mctx, cx, cy, scale, seed, baseAngle) {
+  const rnd = meadowRandom(seed);
+  const count = 2 + Math.floor(rnd() * 2);
+  const lean = (baseAngle || 0) + (rnd() - 0.5) * 26;
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0.5 : i / (count - 1);
+    const angle = lean - 34 + t * 68 + (rnd() - 0.5) * 10;
+    const len = (16 + rnd() * 8) * scale;
+    drawMeadowBlade(mctx, cx, cy, angle, len, 0.05, COLORS.meadow.greens[(i + 1) % 2]);
+  }
+}
+
+// Halm-Typ 3: kleines Kleeblatt-Buendel (3 runde Blaettchen) statt spitzer Halme
+function drawMeadowGrassTuft3(mctx, cx, cy, scale, seed, baseAngle) {
+  const rnd = meadowRandom(seed);
+  const stemLen = 6 * scale;
+  const lean = (baseAngle || 0) * Math.PI / 180 + (rnd() - 0.5) * Math.PI * 0.3;
+  const sx = cx + Math.sin(lean) * stemLen, sy = cy - Math.cos(lean) * stemLen;
+  mctx.strokeStyle = COLORS.meadow.outline;
+  mctx.lineWidth = Math.max(0.7, 1 * scale);
+  mctx.beginPath();
+  mctx.moveTo(cx, cy);
+  mctx.lineTo(sx, sy);
+  mctx.stroke();
+  const leafR = 5.2 * scale;
+  for (let i = 0; i < 3; i++) {
+    const a = lean + (i - 1) * (Math.PI * 2 / 3.4);
+    const lx = sx + Math.sin(a) * leafR * 0.9, ly = sy - Math.cos(a) * leafR * 0.9;
+    mctx.beginPath();
+    mctx.ellipse(lx, ly, leafR * 0.62, leafR * 0.48, a, 0, Math.PI * 2);
+    mctx.fillStyle = meadowBodyFill(mctx, lx, ly, leafR * 0.6, { hi: COLORS.meadow.cloverHi, base: COLORS.meadow.clover, lo: COLORS.meadow.cloverLo });
+    mctx.fill();
+    mctx.lineWidth = Math.max(0.6, 0.8 * scale);
+    mctx.strokeStyle = COLORS.meadow.outline;
+    mctx.stroke();
+  }
+}
+
+// Halm-Typ 4: 2-3 lange, leicht ueberhaengende "trockene" Halme (gelblich) - Farbabwechslung, wie
+// man sie auf echten Wiesen zwischen dem Gruen sieht.
+function drawMeadowGrassTuft4(mctx, cx, cy, scale, seed, baseAngle) {
+  const rnd = meadowRandom(seed);
+  const count = 2 + Math.floor(rnd() * 2);
+  const lean = (baseAngle || 0) + (rnd() - 0.5) * 30;
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0.5 : i / (count - 1);
+    const angle = lean - 20 + t * 40 + (rnd() - 0.5) * 8;
+    const len = (18 + rnd() * 9) * scale;
+    drawMeadowBlade(mctx, cx, cy, angle, len, 0.045, { hi: COLORS.meadow.strawHi, base: COLORS.meadow.straw, lo: COLORS.meadow.strawLo });
+  }
+}
+
+const MEADOW_GRASS_VARIANTS = [drawMeadowGrassTuft1, drawMeadowGrassTuft2, drawMeadowGrassTuft3, drawMeadowGrassTuft4];
+
+// Bluete-Typ 1: 5 ovale Bluetenblaetter
+function drawMeadowFlower1(mctx, cx, cy, scale) {
+  const petalR = 4.2 * scale;
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const px = cx + Math.cos(a) * petalR * 0.95, py = cy + Math.sin(a) * petalR * 0.95;
+    mctx.beginPath();
+    mctx.ellipse(px, py, petalR * 0.62, petalR * 0.42, a, 0, Math.PI * 2);
+    mctx.fillStyle = meadowBodyFill(mctx, px, py, petalR * 0.6, { hi: COLORS.meadow.petalHi, base: COLORS.meadow.petal, lo: COLORS.meadow.petalLo });
+    mctx.fill();
+    mctx.lineWidth = Math.max(0.5, 0.8 * scale);
+    mctx.strokeStyle = COLORS.meadow.outline;
+    mctx.stroke();
+  }
+  mctx.beginPath();
+  mctx.arc(cx, cy, petalR * 0.42, 0, Math.PI * 2);
+  mctx.fillStyle = COLORS.meadow.dotFlowerCenter;
+  mctx.fill();
+  mctx.lineWidth = Math.max(0.5, 0.7 * scale);
+  mctx.strokeStyle = COLORS.meadow.outline;
+  mctx.stroke();
+}
+
+// Bluete-Typ 2: kleine Tupfen-Bluete (3-4 winzige helle Punkte)
+function drawMeadowFlower2(mctx, cx, cy, scale, seed) {
+  const rnd = meadowRandom(seed);
+  const n = 3 + Math.floor(rnd() * 2);
+  for (let i = 0; i < n; i++) {
+    const a = rnd() * Math.PI * 2;
+    const d = 3.2 * scale * rnd();
+    const dx = cx + Math.cos(a) * d, dy = cy + Math.sin(a) * d;
+    const r = 1.6 * scale;
+    mctx.beginPath();
+    mctx.arc(dx, dy, r, 0, Math.PI * 2);
+    mctx.fillStyle = COLORS.meadow.dotFlowerCol;
+    mctx.fill();
+    mctx.lineWidth = Math.max(0.4, 0.6 * scale);
+    mctx.strokeStyle = COLORS.meadow.outline;
+    mctx.stroke();
+  }
+}
+
+// Bluete-Typ 3: kleine Sternbluete (Butterblumen-Look)
+function drawMeadowFlower3(mctx, cx, cy, scale) {
+  const outerR = 4.6 * scale, innerR = 1.6 * scale;
+  mctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+    const r = i % 2 === 0 ? outerR : innerR;
+    const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+    if (i === 0) mctx.moveTo(x, y); else mctx.lineTo(x, y);
+  }
+  mctx.closePath();
+  mctx.fillStyle = meadowBodyFill(mctx, cx, cy, outerR, { hi: COLORS.meadow.starHi, base: COLORS.meadow.star, lo: COLORS.meadow.starLo });
+  mctx.fill();
+  mctx.lineWidth = Math.max(0.5, 0.8 * scale);
+  mctx.strokeStyle = COLORS.meadow.outline;
+  mctx.stroke();
+  mctx.beginPath();
+  mctx.arc(cx, cy, innerR * 0.85, 0, Math.PI * 2);
+  mctx.fillStyle = COLORS.meadow.dotFlowerCenter;
+  mctx.fill();
+}
+
+// Bluete-Typ 4: kleine haengende Glockenbluete an duennem Stiel (blau-violett)
+function drawMeadowFlower4(mctx, cx, cy, scale, angleDeg) {
+  const rad = (angleDeg || 0) * Math.PI / 180;
+  const ux = Math.sin(rad), uy = -Math.cos(rad);
+  const stemLen = 7 * scale;
+  const bx = cx + ux * stemLen, by = cy + uy * stemLen;
+  mctx.strokeStyle = COLORS.meadow.outline;
+  mctx.lineWidth = Math.max(0.6, 0.9 * scale);
+  mctx.beginPath();
+  mctx.moveTo(cx, cy);
+  mctx.lineTo(bx, by);
+  mctx.stroke();
+  const bellR = 3 * scale;
+  mctx.beginPath();
+  mctx.moveTo(bx - bellR, by);
+  mctx.quadraticCurveTo(bx - bellR * 1.1, by + bellR * 1.4, bx, by + bellR * 1.7);
+  mctx.quadraticCurveTo(bx + bellR * 1.1, by + bellR * 1.4, bx + bellR, by);
+  mctx.quadraticCurveTo(bx, by - bellR * 0.4, bx - bellR, by);
+  mctx.closePath();
+  mctx.fillStyle = meadowBodyFill(mctx, bx, by + bellR * 0.6, bellR * 1.3, { hi: COLORS.meadow.bellHi, base: COLORS.meadow.bell, lo: COLORS.meadow.bellLo });
+  mctx.fill();
+  mctx.lineWidth = Math.max(0.5, 0.7 * scale);
+  mctx.strokeStyle = COLORS.meadow.outline;
+  mctx.stroke();
+}
+
+const MEADOW_FLOWER_VARIANTS = [
+  function (mctx, cx, cy, scale, seed) { drawMeadowFlower1(mctx, cx, cy, scale); },
+  function (mctx, cx, cy, scale, seed) { drawMeadowFlower2(mctx, cx, cy, scale, seed); },
+  function (mctx, cx, cy, scale, seed) { drawMeadowFlower3(mctx, cx, cy, scale); },
+  function (mctx, cx, cy, scale, seed) { drawMeadowFlower4(mctx, cx, cy, scale, seed % 360); }
+];
+
+// Fuellt ein rechteckiges Rand-Stueck mit einem Raster aus gemischten Grashalm-Typen + vereinzelten
+// Blueten. Wie beim Tiefensortier-Prinzip im Rest des Spiels (siehe draw()/drawables weiter unten:
+// "weiter unten = naeher am Betrachter = wird zuletzt/obenauf gezeichnet"): die reine
+// Rasterreihenfolge wuerde das bei dichter, ueberlappender Bepflanzung durch den Zufalls-Jitter
+// nicht zuverlaessig einhalten - deshalb werden erst ALLE Positionen gesammelt, nach der
+// tatsaechlichen y-Position sortiert und ERST DANN gezeichnet.
+// "baseAngle" (Grad, 0 = nach oben) wird an jeden Grashalm-Buschel weitergereicht (siehe
+// drawMeadowGrassTuft1-4) - damit kann ein ganzer Streifen in eine gemeinsame Grundrichtung wachsen
+// (z. B. "nach rechts, ins Spielfeld hinein" fuer den linken Rand). Default 0 = wie bisher nach oben.
+function drawMeadowStrip(mctx, x0, y0, w, h, seedBase, spacing, scaleMin, scaleMax, flowerChance, baseAngle) {
+  const cols = Math.max(1, Math.round(w / spacing));
+  const rows = Math.max(1, Math.round(h / spacing));
+  const padding = 5;
+  const cellW = w / cols, cellH = h / rows;
+  const items = [];
+  for (let ry = 0; ry < rows; ry++) {
+    for (let rx = 0; rx < cols; rx++) {
+      const seed = seedBase + ry * 977 + rx * 131 + 7;
+      const rnd = meadowRandom(seed);
+      let cx = x0 + (rx + 0.5) * cellW + (rnd() - 0.5) * cellW * 0.8;
+      let cy = y0 + (ry + 0.5) * cellH + (rnd() - 0.5) * cellH * 0.8;
+      cx = Math.min(Math.max(cx, x0 + padding), x0 + w - padding);
+      cy = Math.min(Math.max(cy, y0 + padding), y0 + h - padding);
+      const scale = scaleMin + rnd() * (scaleMax - scaleMin);
+      const variant = MEADOW_GRASS_VARIANTS[Math.floor(rnd() * MEADOW_GRASS_VARIANTS.length)];
+      items.push({ y: cy, draw: function () { variant(mctx, cx, cy, scale, seed, baseAngle); } });
+      if (rnd() < flowerChance) {
+        const fvariant = MEADOW_FLOWER_VARIANTS[Math.floor(rnd() * MEADOW_FLOWER_VARIANTS.length)];
+        const fx = cx + (rnd() - 0.5) * 5, fy = cy + (rnd() - 0.5) * 5, fscale = 0.7 + rnd() * 0.4;
+        items.push({ y: fy, draw: function () { fvariant(mctx, fx, fy, fscale, seed); } });
+      }
+    }
+  }
+  items.sort(function (a, b) { return a.y - b.y; });
+  for (const item of items) item.draw();
+}
+
+// Wie weit die Wiese unten/links/rechts sichtbar ins Spielfeld hineinreichen darf (Wunsch von
+// Marco: "unten und auf der Seite grafisch in den Spielbereich reichen"). Bewusst NICHT oben (dort
+// bleibt der Rand wie bisher klar getrennt) und bewusst als eigene Konstante, falls Marco die Tiefe
+// noch anpassen moechte.
+const MEADOW_FIELD_OVERLAP = 22;
+
+// Baut die komplette Wiese EINMALIG auf eine unsichtbare Offscreen-Canvas in logischer Aufloesung
+// (CANVAS_PX x CANVAS_PX, OHNE dpr-Multiplikation - beim spaeteren ctx.drawImage() aus dem bereits
+// per ctx.setTransform() skalierten Haupt-Context wird sie automatisch korrekt auf die tatsaechliche
+// Geraete-Pixeldichte hochskaliert, siehe setupCanvas()).
+//
+// WICHTIG: der Hintergrund wird NUR in den 4 Randstreifen selbst beige gefuellt, NICHT im
+// mittleren (Spielfeld-grossen) Bereich - der bleibt transparent. Grund: unten/links/rechts duerfen
+// Halme absichtlich ueber die Randstreifen-Grenze hinaus INS Spielfeld hineinwachsen (siehe
+// baseAngle unten). draw() zeichnet spaeter das Karo (drawBoard()) zuerst voll deckend, und kopiert
+// DANACH nur noch einen schmalen Ueberlappungs-Streifen (MEADOW_FIELD_OVERLAP) aus genau diesem
+// Cache-Bild erneut obendrauf - waere der mittlere Bereich hier schon beige gefuellt, wuerde dieser
+// zweite Kopiervorgang das Karo-Muster dort faelschlich uebermalen statt nur die Halme sichtbar zu
+// machen (da dann auch die leeren, "grashalmlosen" Pixel dieses Bereichs beige waeren statt
+// durchsichtig).
+function buildMeadowCache() {
+  const mcanvas = document.createElement('canvas');
+  mcanvas.width = CANVAS_PX;
+  mcanvas.height = CANVAS_PX;
+  const mctx = mcanvas.getContext('2d');
+  mctx.fillStyle = COLORS.canvasMargin;
+  mctx.fillRect(0, 0, CANVAS_PX, CANVAS_MARGIN);                                    // oben
+  mctx.fillRect(0, CANVAS_PX - CANVAS_MARGIN, CANVAS_PX, CANVAS_MARGIN);            // unten
+  mctx.fillRect(0, CANVAS_MARGIN, CANVAS_MARGIN, BOARD_PX);                          // links
+  mctx.fillRect(CANVAS_PX - CANVAS_MARGIN, CANVAS_MARGIN, CANVAS_MARGIN, BOARD_PX);  // rechts
+
+  const spacing = 8, scaleMin = 0.75, scaleMax = 1.15, flowerChance = 0.16;
+  // oben: waechst wie bisher nach oben (baseAngle 0 = WEG vom Spielfeld, absichtlich KEIN Hineinragen)
+  drawMeadowStrip(mctx, 0, 0, CANVAS_PX, CANVAS_MARGIN, 1000, spacing, scaleMin, scaleMax, flowerChance, 0);
+  // unten: waechst ebenfalls "nach oben" (baseAngle 0) - das bedeutet hier automatisch INS Spielfeld
+  // hinein, weil das Feld ueber diesem Streifen liegt.
+  drawMeadowStrip(mctx, 0, CANVAS_PX - CANVAS_MARGIN, CANVAS_PX, CANVAS_MARGIN, 2000, spacing, scaleMin, scaleMax, flowerChance, 0);
+  // links: baseAngle 90 = nach rechts gedreht, also INS Spielfeld hinein (das rechts von diesem Streifen liegt)
+  drawMeadowStrip(mctx, 0, CANVAS_MARGIN, CANVAS_MARGIN, BOARD_PX, 3000, spacing, scaleMin, scaleMax, flowerChance, 90);
+  // rechts: baseAngle -90 = nach links gedreht, also INS Spielfeld hinein
+  drawMeadowStrip(mctx, CANVAS_PX - CANVAS_MARGIN, CANVAS_MARGIN, CANVAS_MARGIN, BOARD_PX, 4000, spacing, scaleMin, scaleMax, flowerChance, -90);
+  return mcanvas;
+}
+
+const meadowCache = buildMeadowCache();
 
 // Dreieckiger Verbinder pro Segment (inkl. Kopf), zeigt zur jeweils naechsten/schwanzwaertigen
 // Kugel - schliesst die Luecke zwischen zwei benachbarten Kreisen. Haengt nur von der Lage der
@@ -1071,7 +1758,45 @@ function drawOverlay() {
 // dass bei GLEICHER Zeile (waagrechte Nachbarglieder) die Kopf-naeheren Glieder weiterhin wie
 // bisher ueber den schwanz-naeheren liegen.
 function draw() {
+  // Zuerst die GESAMTE Zeichenflaeche inkl. Rand loeschen/neu zeichnen (nicht nur das Karo-Raster) -
+  // sonst wuerden Boesewicht-/Futter-Teile, die letzten Tick in den Rand hineinragten, dort als Spur
+  // liegen bleiben, da drawBoard() nur die GRID*CELL-Flaeche neu zeichnet. Statt eines einfarbigen
+  // fillRect() wird hier die vorgerenderte Wiese (meadowCache, siehe Abschnitt "5c) Wiese" weiter
+  // oben) als fertiges Bild hineinkopiert - ein einzelner drawImage()-Aufruf statt jeden Tick erneut
+  // hunderte ueberlappende Grashalme/Blueten zu berechnen.
+  ctx.drawImage(meadowCache, 0, 0);
+
+  // Rest der Zeichenroutine bleibt unveraendert und rechnet weiterhin mit Koordinaten von 0 bis
+  // BOARD_PX (Zellgrenzen etc.) - der Rand wird stattdessen per Verschiebung des Koordinatenursprungs
+  // "aussen herum" gelegt, damit Elemente, die ueber die Feldkante hinausragen (Boesewicht-Hoernchen,
+  // Futter-Icons in Randzellen), in diesen Rand hinein statt hart abgeschnitten gezeichnet werden.
+  ctx.save();
+  ctx.translate(CANVAS_MARGIN, CANVAS_MARGIN);
+
   drawBoard();
+
+  // Wiese darf unten/links/rechts sichtbar ins Spielfeld hineinreichen (Wunsch von Marco) - drawBoard()
+  // hat das Karo gerade VOLL deckend darueber gezeichnet, deshalb hier den entsprechenden Ausschnitt
+  // aus meadowCache (der im Spielfeld-Bereich ausserhalb der eigentlichen Randstreifen transparent
+  // ist, siehe buildMeadowCache()-Kommentar) noch einmal obendrauf kopieren. Quelle und Ziel sind
+  // exakt derselbe Bildausschnitt, nur um CANVAS_MARGIN verschoben (da wir hier bereits im per
+  // translate() verschobenen Koordinatensystem sind, meadowCache aber in den urspruenglichen,
+  // unverschobenen Canvas-Koordinaten aufgebaut wurde). Die Boesewicht-/Futter-/Raupen-Objekte werden
+  // ERST DANACH gezeichnet (siehe drawables unten) - liegen also IMMER ueber der hineinragenden
+  // Wiese, auch wenn beide in derselben Feld-Zeile stehen (das war Marcos Vorrang-Wunsch).
+  const mo = MEADOW_FIELD_OVERLAP;
+  // unten:
+  ctx.drawImage(meadowCache,
+    0, CANVAS_MARGIN + BOARD_PX - mo, CANVAS_PX, CANVAS_MARGIN + mo,
+    -CANVAS_MARGIN, BOARD_PX - mo, CANVAS_PX, CANVAS_MARGIN + mo);
+  // links:
+  ctx.drawImage(meadowCache,
+    0, 0, CANVAS_MARGIN + mo, CANVAS_PX,
+    -CANVAS_MARGIN, -CANVAS_MARGIN, CANVAS_MARGIN + mo, CANVAS_PX);
+  // rechts:
+  ctx.drawImage(meadowCache,
+    CANVAS_MARGIN + BOARD_PX - mo, 0, CANVAS_MARGIN + mo, CANVAS_PX,
+    BOARD_PX - mo, -CANVAS_MARGIN, CANVAS_MARGIN + mo, CANVAS_PX);
 
   const drawables = [];
   if (state.villainEnabled && state.villain) {
@@ -1087,6 +1812,7 @@ function draw() {
   for (const item of drawables) item.draw();
 
   drawOverlay();
+  ctx.restore();
 }
 
 // ---------------------------------------------------------------
