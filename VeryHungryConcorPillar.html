@@ -185,31 +185,87 @@ const VILLAIN_SPAWN_CHANCE = 0.02;   // pro Tick, wenn gerade keiner da ist und 
 const VILLAIN_LIFETIME_TICKS = 25;   // so lange bleibt er sichtbar, bevor er von selbst verschwindet
 const VILLAIN_COOLDOWN_TICKS = 20;   // Pause nach dem Verschwinden, bevor er erneut erscheinen kann
 
-// Eigene Farbpalette (Raupen-Thema, helles Blattgrün)
+// Radius der Koerperglieder relativ zu CELL, aus der Stilprobe uebernommen (siehe
+// stilprobe-raupe-bestaetigt.md). Bewusst groesser als CELL/2, damit sich benachbarte Glieder
+// ueberlappen und keine Luecken zwischen ihnen entstehen (siehe Konzept, Abschnitt "Gewuenschter
+// Stil"). Der Kopf ist zusaetzlich etwas groesser (+0.06).
+const SNAKE_RADIUS_FACTOR = 0.56;
+
+// Farbpalette: Board-Hintergrund unveraendert, Raupen-Farben aus der von Marco bestaetigten
+// Stilprobe uebernommen (siehe stilprobe-raupe-bestaetigt.md) - ersetzt die bisherigen
+// Platzhalter-Flaechenfarben (bodyA/bodyB/head als einzelne Hex-Werte) durch Farbverlaufs-Objekte
+// {hi, base, lo}, die bodyFill() fuer die Kugel-Wirkung braucht. food-Unterobjekt aus
+// stilprobe-futter-bausteine.md, fuer die drei bereits gestalteten Futter-Icons (Pizza, Eis, Bier).
 const COLORS = {
   boardA: '#e4edcf',
   boardB: '#d9e5bd',
-  bodyA: '#6dbf5a',
-  bodyB: '#58ab48',
-  head: '#3f8f3a',
+  shadow: 'rgba(47, 61, 44, 0.28)',
+  outline: '#2f5f2c',            // gruene Kontur der Koerperglieder (nicht Kopf/Fuehler-Spitzen)
+  bands: [
+    { hi: '#a9e290', base: '#6dbf5a', lo: '#3f8f3a' },
+    { hi: '#94d47b', base: '#58ab48', lo: '#358030' }
+  ],
+  head: { hi: '#ff9c86', base: '#e6432f', lo: '#a8241c' },
+  redOutline: '#33090a',         // sehr dunkles Rot: Kontur von Kopf, Kopf-Dreieck und Fuehler-Kugeln
+  antenna: { stroke: '#1a1a1a', tip: { hi: '#c2453a', base: '#8f1d16', lo: '#5c0f0a' } },
   eyeWhite: '#ffffff',
   eyePupil: '#1f2a1c',
-  morphoBlue: '#1f5fe0',       // reserviert für den Schmetterling am Ende des Ziel-Modus
-  villain: '#5b2a86'           // Platzhalter-Farbe fuer den Boesewicht, echtes Design folgt in Woche 2
+  lash: '#000000',
+  cheek: 'rgba(226, 84, 138, 0.8)',
+  dot: 'rgba(255, 255, 255, 0.6)',
+  morphoBlue: '#1f5fe0',         // reserviert für den Schmetterling am Ende des Ziel-Modus
+  villain: '#5b2a86',            // Platzhalter-Farbe fuer den Boesewicht, echtes Design folgt spaeter
+  food: {
+    o: '#4a2a16',
+    crustHi: '#f0c878', crust: '#d49a3a',
+    cheeseHi: '#ffe58f', cheese: '#f3c44e',
+    pep: '#c9302a',
+    coneHi: '#ecc383', cone: '#c98f45',
+    scoopHi: '#ffd6e4', scoop: '#f4a3bf', seed: '#d94f7d',
+    beerHi: '#ffdc6b', beer: '#ee9f1a',
+    foam: '#fffaf0', foamLo: '#efe2c4',
+    // Spaghetti
+    plateHi: '#fffdf7', plate: '#e6ddc4',
+    sauceHi: '#e2624a', sauce: '#b23a26',
+    pastaHi: '#ffe17a', pasta: '#d99a2e',
+    meatballHi: '#8a5a3c', meatball: '#5c3820',
+    basil: '#4b7a3a',
+    // Aperol
+    aperolHi: '#ffb066', aperol: '#f2701a',
+    orangeFlesh: '#ffcf7a', orangePith: '#e8832a',
+    // Sushi
+    riceHi: '#fffdf6', rice: '#efe6cc',
+    noriHi: '#3d5136', nori2: '#1f2e1a',
+    fillingHi: '#ff9d84', filling: '#e8735a',
+    // Ramen
+    bowlHi: '#8a3a2e', bowl: '#5c1f18',
+    brothHi: '#ffdca0', broth: '#e8a23a',
+    noodle: '#f7e2a0',
+    eggWhite: '#fffdf5', eggYolk: '#f5a623',
+    nori: '#2f4a2a', onion: '#5fae4a',
+    // Banane
+    bananaHi: '#fff3a0', banana: '#f4cf3c', bananaTip: '#8a6a2a',
+    // Gummibaerchen
+    gummyHi: '#ff9d8a', gummy: '#e2432f'
+  }
 };
 
-// Finale Futter-Liste aus dem Konzept. Farben sind Platzhalter, echte Icons folgen in Woche 2.
-// Spielmechanisch sind alle Sorten gleichwertig (siehe Konzept) - reine visuelle Abwechslung.
+// Finale Futter-Liste aus dem Konzept. Alle neun Sorten haben jetzt ein bestaetigtes SVG-Icon
+// (Feld "art", siehe stilprobe-futter-bausteine.md) - "color" bleibt als reiner Notfall-Fallback
+// stehen (siehe drawFood(): greift nur, wenn foodImages[art] aus irgendeinem Grund fehlt). Lasagne
+// wurde in der Stilprobe durch Spaghetti ersetzt (Marco: "das ist einfacher zu zeichnen").
+// Spielmechanisch sind alle Sorten weiterhin gleichwertig (siehe Konzept) - reine visuelle
+// Abwechslung.
 const FOOD = [
-  { name: 'Lasagne',      color: '#c8562a' },
-  { name: 'Ramen',        color: '#e0a53a' },
-  { name: 'Pizza',        color: '#d9382e' },
-  { name: 'Banane',       color: '#f4d03f' },
-  { name: 'Gummibärchen', color: '#8e44ad' },
-  { name: 'Erdbeer-Eis',  color: '#f7a8c0' },
-  { name: 'Kuchen',       color: '#8b5a2b' },
-  { name: 'Aperol',       color: '#ff7f11' },
-  { name: 'Bier',         color: '#f0b323' }
+  { name: 'Spaghetti',    color: '#d99a2e', art: 'spaghetti' },
+  { name: 'Ramen',        color: '#e0a53a', art: 'ramen' },
+  { name: 'Pizza',        color: '#d9382e', art: 'pizza' },
+  { name: 'Banane',       color: '#f4d03f', art: 'banana' },
+  { name: 'Gummibärchen', color: '#e2432f', art: 'gummyBear' },
+  { name: 'Erdbeer-Eis',  color: '#f7a8c0', art: 'iceCream' },
+  { name: 'Sushi',        color: '#e8735a', art: 'sushi' },
+  { name: 'Aperol',       color: '#f2701a', art: 'aperol' },
+  { name: 'Bier',         color: '#f0b323', art: 'beer' }
 ];
 
 // Tastenzuordnung: Pfeiltasten und WASD, unabhängig vom Tastaturlayout (e.code statt e.key)
@@ -219,6 +275,281 @@ const DIR_KEYS = {
   ArrowLeft: { x: -1, y: 0 }, KeyA: { x: -1, y: 0 },
   ArrowRight: { x: 1, y: 0 }, KeyD: { x: 1, y: 0 }
 };
+
+// ---------------------------------------------------------------
+// 1b) Futter-Icons als eingebettete SVGs (Pizza, Erdbeer-Eis, Bier)
+// ---------------------------------------------------------------
+// Uebernommen 1:1 aus der bestaetigten Stilprobe (stilprobe-futter-bausteine.md) - bewusst nicht
+// neu gebaut. Jede Funktion baut einen SVG-Text, der per data:-URI als <img> geladen wird
+// (loadImage) und danach beliebig oft mit drawImage() gezeichnet werden kann, ohne bei jedem
+// Frame neu als SVG geparst zu werden.
+function svgWrap(defs, body) {
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="128" height="128">' +
+    '<defs>' + defs + '</defs>' + body + '</svg>';
+}
+function grad(id, hi, lo) {
+  return '<linearGradient id="' + id + '" x1="0" y1="0" x2="1" y2="1">' +
+    '<stop offset="0" stop-color="' + hi + '"/><stop offset="1" stop-color="' + lo + '"/></linearGradient>';
+}
+function circ(cx, cy, r, fill, stroke, sw) {
+  return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + fill + '"' +
+    (stroke ? ' stroke="' + stroke + '" stroke-width="' + sw + '"' : '') + '/>';
+}
+
+function pizzaSvg(f) {
+  return svgWrap(
+    grad('gc', f.cheeseHi, f.cheese) + grad('gr', f.crustHi, f.crust),
+    '<path d="M5.5 9 L26.5 9 L16 29 Z" fill="url(#gc)" stroke="' + f.o + '" stroke-width="1.6" stroke-linejoin="round"/>' +
+    '<rect x="4" y="5" width="24" height="5.5" rx="2.75" fill="url(#gr)" stroke="' + f.o + '" stroke-width="1.6"/>' +
+    circ(12, 15, 2.6, f.pep, f.o, 0.9) +
+    circ(19.5, 15.5, 2.6, f.pep, f.o, 0.9) +
+    circ(15.7, 21.5, 2.3, f.pep, f.o, 0.9)
+  );
+}
+
+function iceCreamSvg(f) {
+  // Waffel-Karomuster: zwei Scharen diagonaler Linien, per clipPath auf das Kegel-Dreieck begrenzt.
+  let hatch = '';
+  for (let o = -8; o <= 14; o += 5) {
+    hatch += '<line x1="' + (8 + o) + '" y1="14" x2="' + (24 + o) + '" y2="30" stroke="' + f.o + '" stroke-width="0.9" opacity="0.7"/>';
+    hatch += '<line x1="' + (24 - o) + '" y1="14" x2="' + (8 - o) + '" y2="30" stroke="' + f.o + '" stroke-width="0.9" opacity="0.7"/>';
+  }
+  // Wolkenfoermige/gewellte Unterkante der Kugel: 4 kleine Kreise ("Scallops"), NACH dem grossen
+  // Kugelkreis gezeichnet, so dass sie sichtbar ueber den Kugelrand reichen/ihn ueberlappen.
+  const bumpR = 2.6;
+  const bumpY = 14.4;
+  const bumpXs = [10.2, 14.1, 17.9, 21.8];
+  let scoopBumps = '';
+  for (const bx of bumpXs) {
+    scoopBumps += circ(bx, bumpY, bumpR, 'url(#gs)', f.o, 1.6);
+  }
+  return svgWrap(
+    grad('gk', f.coneHi, f.cone) + grad('gs', f.scoopHi, f.scoop) +
+    '<clipPath id="coneClip"><path d="M10 15 L22 15 L16 30 Z"/></clipPath>',
+    '<path d="M10 15 L22 15 L16 30 Z" fill="url(#gk)" stroke="' + f.o + '" stroke-width="1.6" stroke-linejoin="round"/>' +
+    '<g clip-path="url(#coneClip)">' + hatch + '</g>' +
+    circ(16, 9, 6.5, 'url(#gs)', f.o, 1.6) +
+    scoopBumps +
+    circ(12.5, 7, 0.9, f.seed) + circ(17.5, 5.5, 0.9, f.seed) + circ(20, 9.5, 0.9, f.seed) +
+    circ(13.5, 10.5, 0.9, f.seed) + circ(17, 11.1, 0.9, f.seed) +
+    '<ellipse cx="12.5" cy="4.8" rx="2.4" ry="1.4" fill="#ffffff" opacity="0.45" transform="rotate(-25 12.5 4.8)"/>'
+  );
+}
+
+function beerSvg(f) {
+  return svgWrap(
+    grad('gb', f.beerHi, f.beer) + grad('gf', f.foam, f.foamLo),
+    '<path d="M21.5 13 H25 a3 3 0 0 1 3 3 v5 a3 3 0 0 1 -3 3 H21.5" fill="none" stroke="' + f.o + '" stroke-width="2.6" stroke-linecap="round"/>' +
+    '<rect x="7.5" y="9" width="14" height="19.5" rx="2.4" fill="url(#gb)" stroke="' + f.o + '" stroke-width="1.6"/>' +
+    '<rect x="9.8" y="14" width="2" height="11" rx="1" fill="#ffffff" opacity="0.35"/>' +
+    circ(10.5, 9.2, 4.2, f.o) + circ(15, 7.2, 4.7, f.o) + circ(19.3, 9.2, 4.1, f.o) + circ(14.8, 10.4, 3.9, f.o) +
+    circ(10.5, 9.2, 3.3, 'url(#gf)') + circ(15, 7.2, 3.8, 'url(#gf)') + circ(19.3, 9.2, 3.2, 'url(#gf)') + circ(14.8, 10.4, 3, 'url(#gf)')
+  );
+}
+
+function spaghettiSvg(f) {
+  // Teller von oben: Nudelnest aus einzelnen kurzen, gebogenen Straehnen, die im Kreis um die
+  // Tellermitte angeordnet sind (wie ein Wirbel/Nest), Tomatensauce, Fleischbaellchen,
+  // Basilikumblatt. Jede Straehne wird - wie schon bei der Banane - doppelt gezeichnet
+  // (dunkle Kontur breiter, helle Verlaufsfuellung schmaler darueber), damit sie sich klar vom
+  // cremefarbenen Teller abhebt statt wie beim ersten Entwurf darin zu verschwimmen.
+  function strandPath(cx, cy, angleDeg, len, amp) {
+    const rad = angleDeg * Math.PI / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    function rot(x, y) {
+      return [(cx + x * cos - y * sin).toFixed(2), (cy + x * sin + y * cos).toFixed(2)];
+    }
+    const half = len / 2;
+    const p0 = rot(-half, 0), c1 = rot(-half / 2, -amp), p1 = rot(0, 0), c2 = rot(half / 2, amp), p2 = rot(half, 0);
+    return 'M' + p0[0] + ' ' + p0[1] +
+      ' Q' + c1[0] + ' ' + c1[1] + ' ' + p1[0] + ' ' + p1[1] +
+      ' Q' + c2[0] + ' ' + c2[1] + ' ' + p2[0] + ' ' + p2[1];
+  }
+  let noodles = '';
+  const ring = [0, 45, 90, 135, 180, 225, 270, 315];
+  ring.forEach(function (theta) {
+    const rad = theta * Math.PI / 180;
+    const cx = 16 + 5.5 * Math.cos(rad), cy = 16.5 + 5.5 * Math.sin(rad);
+    const d = strandPath(cx, cy, theta + 90, 7.4, 1.7);
+    noodles += '<path d="' + d + '" fill="none" stroke="' + f.o + '" stroke-width="2.1" stroke-linecap="round"/>' +
+      '<path d="' + d + '" fill="none" stroke="url(#gnoodle)" stroke-width="1.3" stroke-linecap="round"/>';
+  });
+  return svgWrap(
+    grad('gplate', f.plateHi, f.plate) + grad('gnoodle', f.pastaHi, f.pasta) +
+    grad('gsauce2', f.sauceHi, f.sauce) + grad('gmeat', f.meatballHi, f.meatball) +
+    '<clipPath id="noodleClip"><circle cx="16" cy="16.5" r="9.4"/></clipPath>',
+    circ(16, 16.5, 12.3, 'url(#gplate)', f.o, 1.6) +
+    circ(16, 16.5, 9.6, 'none', f.o, 1) +
+    '<g clip-path="url(#noodleClip)">' + noodles + '</g>' +
+    '<path d="M12 14.5 C10.4 17.2 11 20 14.6 21 C18.2 22 21.8 20.4 21.2 16.8 C20.7 13.8 17 12.2 14.4 12.8 C13.2 13.1 12.5 13.7 12 14.5 Z" fill="url(#gsauce2)" stroke="' + f.o + '" stroke-width="1.3" stroke-linejoin="round"/>' +
+    circ(14.2, 16.4, 1.9, 'url(#gmeat)', f.o, 1) +
+    circ(18.4, 17.6, 1.7, 'url(#gmeat)', f.o, 1) +
+    circ(16, 19.8, 1.6, 'url(#gmeat)', f.o, 1) +
+    '<path d="M20.6 13.8 C22.1 13 23.2 13.8 22.8 15.1 C22.4 16.3 20.7 16.5 20 15.5 C19.6 14.9 19.9 14.2 20.6 13.8 Z" fill="' + f.basil + '" stroke="' + f.o + '" stroke-width="0.9"/>' +
+    circ(11.3, 11.4, 0.4, f.o) + circ(20.8, 10.6, 0.4, f.o) + circ(9.4, 17.6, 0.4, f.o) +
+    '<ellipse cx="9.5" cy="9.6" rx="2.6" ry="1.3" fill="#ffffff" opacity="0.4" transform="rotate(-25 9.5 9.6)"/>'
+  );
+}
+
+function aperolSvg(f) {
+  return svgWrap(
+    grad('gap', f.aperolHi, f.aperol),
+    '<path d="M9 6 C9 14 12 17 16 17 C20 17 23 14 23 6 Z" fill="url(#gap)" stroke="' + f.o + '" stroke-width="1.6" stroke-linejoin="round"/>' +
+    '<ellipse cx="16" cy="6" rx="7" ry="1.6" fill="none" stroke="' + f.o + '" stroke-width="1.4"/>' +
+    '<rect x="15.1" y="17" width="1.8" height="8" fill="' + f.o + '"/>' +
+    '<ellipse cx="16" cy="26.5" rx="6" ry="1.6" fill="none" stroke="' + f.o + '" stroke-width="1.6"/>' +
+    '<path d="M11 26.5 Q16 28 21 26.5" fill="none" stroke="' + f.o + '" stroke-width="1.6" stroke-linecap="round"/>' +
+    '<rect x="12" y="8.5" width="3" height="3" rx="0.6" fill="#eaf6ff" opacity="0.75" stroke="' + f.o + '" stroke-width="0.6" transform="rotate(-12 13.5 10)"/>' +
+    '<rect x="17" y="11" width="2.6" height="2.6" rx="0.6" fill="#eaf6ff" opacity="0.75" stroke="' + f.o + '" stroke-width="0.6" transform="rotate(10 18.3 12.3)"/>' +
+    circ(23, 6, 3.1, f.orangeFlesh, f.o, 1.3) +
+    '<circle cx="23" cy="6" r="1.1" fill="' + f.orangePith + '"/>' +
+    '<path d="M23 3.1 L23 8.9 M20.4 4.5 L25.6 7.5 M20.4 7.5 L25.6 4.5" stroke="' + f.orangePith + '" stroke-width="0.6" opacity="0.7"/>' +
+    circ(14, 12, 0.5, '#ffffff') + circ(18, 14, 0.4, '#ffffff') + circ(15.5, 9, 0.4, '#ffffff')
+  );
+}
+
+function sushiSvg(f) {
+  // Von der Seite statt im Querschnitt von oben (Marco: "gefaellt mir nicht, versuch es von der
+  // Seite"): ein Maki-Stueck als kurzer Zylinder - Rumpf (Pfad in Nori-Farbe, unten abgerundet,
+  // oben eckig fuer einen sauberen Uebergang) und darauf eine Ellipse als Deckflaeche (Reis mit
+  // ovaler Fuellung und Nori-Rand), NACH dem Rumpf gezeichnet. Nur EIN Stueck, dafuer deutlich
+  // groesser (Marco: "mach nur ein Sushi, dafuer groesser") statt zwei kleinerer Stuecke.
+  function piece(cx, cyTop, rx, ry, wallH) {
+    const x0 = cx - rx, x1 = cx + rx, y0 = cyTop, y1 = cyTop + wallH, r = rx * 0.35;
+    const wall = 'M' + x0 + ' ' + y0 + ' L' + x1 + ' ' + y0 + ' L' + x1 + ' ' + (y1 - r) +
+      ' A' + r + ' ' + r + ' 0 0 1 ' + (x1 - r) + ' ' + y1 +
+      ' L' + (x0 + r) + ' ' + y1 +
+      ' A' + r + ' ' + r + ' 0 0 1 ' + x0 + ' ' + (y1 - r) + ' Z';
+    return '<path d="' + wall + '" fill="url(#gnori)" stroke="' + f.o + '" stroke-width="1.6" stroke-linejoin="round"/>' +
+      '<ellipse cx="' + cx + '" cy="' + cyTop + '" rx="' + rx + '" ry="' + ry + '" fill="' + f.nori2 + '" stroke="' + f.o + '" stroke-width="1.6"/>' +
+      '<ellipse cx="' + cx + '" cy="' + cyTop + '" rx="' + (rx * 0.8).toFixed(2) + '" ry="' + (ry * 0.74).toFixed(2) + '" fill="url(#grice)" stroke="' + f.o + '" stroke-width="1"/>' +
+      '<ellipse cx="' + cx + '" cy="' + cyTop + '" rx="' + (ry * 0.85).toFixed(2) + '" ry="' + (ry * 0.32).toFixed(2) + '" fill="url(#gfill)" stroke="' + f.o + '" stroke-width="1.1"/>';
+  }
+  return svgWrap(
+    grad('grice', f.riceHi, f.rice) + grad('gfill', f.fillingHi, f.filling) + grad('gnori', f.noriHi, f.nori2),
+    piece(16, 10, 10, 4, 14) +
+    // Reiskorn-/Sesam-Punkte im Reis-Ring
+    circ(9.5, 9, 0.55, '#f2ecd8') + circ(22.6, 8.6, 0.55, '#f2ecd8') +
+    circ(11, 12.6, 0.5, '#ffffff') + circ(21.3, 12.4, 0.5, '#ffffff') +
+    // Glanzlicht auf dem Nori-Rumpf
+    '<ellipse cx="20.5" cy="17" rx="2.4" ry="4.4" fill="#ffffff" opacity="0.18" transform="rotate(6 20.5 17)"/>'
+  );
+}
+
+function ramenSvg(f) {
+  return svgWrap(
+    grad('gbowl', f.bowlHi, f.bowl) + grad('gbroth', f.brothHi, f.broth),
+    '<path d="M4 12 C4 12 6 24 9.5 27 C12 29 20 29 22.5 27 C26 24 28 12 28 12 Z" fill="url(#gbowl)" stroke="' + f.o + '" stroke-width="1.6" stroke-linejoin="round"/>' +
+    '<ellipse cx="16" cy="12" rx="12" ry="3.8" fill="url(#gbroth)" stroke="' + f.o + '" stroke-width="1.6"/>' +
+    '<path d="M9 11.5 Q11 10 13 11.5 T17 11.5" fill="none" stroke="' + f.noodle + '" stroke-width="1.3" stroke-linecap="round"/>' +
+    '<path d="M15 12.3 Q17 10.8 19 12.3 T23 12.3" fill="none" stroke="' + f.noodle + '" stroke-width="1.3" stroke-linecap="round"/>' +
+    '<rect x="19.5" y="8.3" width="3" height="5.5" rx="0.6" fill="' + f.nori + '" stroke="' + f.o + '" stroke-width="1"/>' +
+    '<ellipse cx="11" cy="13.5" rx="3.1" ry="2.5" fill="' + f.eggWhite + '" stroke="' + f.o + '" stroke-width="1.2"/>' +
+    '<circle cx="11" cy="13.5" r="1.3" fill="' + f.eggYolk + '"/>' +
+    circ(20.5, 12.6, 0.7, f.onion) + circ(23, 11.6, 0.6, f.onion) + circ(13.5, 10.4, 0.6, f.onion) +
+    circ(9, 9.8, 0.55, f.onion) + circ(16.5, 13.6, 0.55, f.onion)
+  );
+}
+
+function bananaSvg(f) {
+  // Marco hat eine Referenz-Silhouette geschickt: "nimm einfach diese Form als Kontur". Die
+  // Kontur wurde direkt aus dem Bild extrahiert (OpenCV-Konturerkennung auf dem Referenzbild,
+  // Polygon vereinfacht, dann zu einer glatten geschlossenen Bezier-Kurve interpoliert und auf
+  // das 32x32-Format skaliert) statt erneut von Hand konstruiert - das ist jetzt exakt seine Form.
+  const path = 'M28.36 2.55 C28.17 1.93 27.06 2.03 26.64 2.0 C26.22 1.97 25.37 1.74 25.18 2.36 C24.99 2.98 25.65 5.16 25.18 6.64 C24.71 8.12 22.48 12.18 21.64 13.45 C20.8 14.72 19.69 15.55 18.91 16.18 C18.13 16.81 16.77 17.71 15.82 18.18 C14.87 18.65 13.48 19.33 11.82 19.73 C10.16 20.13 4.67 20.84 3.36 21.18 C2.05 21.52 2.18 21.95 2.0 22.27 C1.82 22.59 1.48 23.0 2.0 23.55 C2.52 24.1 4.56 25.84 5.91 26.36 C7.26 26.88 10.5 27.45 12.09 27.45 C13.68 27.45 16.33 26.91 17.82 26.36 C19.31 25.81 21.99 24.34 23.27 23.36 C24.55 22.38 26.55 20.32 27.45 19.0 C28.35 17.68 29.66 14.6 30.0 13.45 C30.34 12.3 30.25 11.27 30.0 10.36 C29.75 9.45 28.31 7.68 28.09 6.64 C27.87 5.6 28.55 3.17 28.36 2.55 Z';
+  return svgWrap(
+    // Verlauf: unten heller/goldener Gelbton, oben am Stiel-Ende Richtung Braun, mit weissen
+    // Glanzlichtern separat obendrauf (wie gewuenscht). Glanzlichter per clipPath auf die
+    // Bananenflaeche begrenzt, damit nichts ueber den Rand hinausragt.
+    '<linearGradient id="gban" x1="4" y1="24" x2="29" y2="4" gradientUnits="userSpaceOnUse">' +
+    '<stop offset="0" stop-color="' + f.bananaHi + '"/>' +
+    '<stop offset="0.55" stop-color="' + f.banana + '"/>' +
+    '<stop offset="0.85" stop-color="' + f.banana + '"/>' +
+    '<stop offset="1" stop-color="' + f.bananaTip + '"/>' +
+    '</linearGradient>' +
+    '<clipPath id="banClip"><path d="' + path + '"/></clipPath>',
+    '<path d="' + path + '" fill="url(#gban)" stroke="' + f.o + '" stroke-width="1.3" stroke-linejoin="round"/>' +
+    '<g clip-path="url(#banClip)">' +
+    // Innere Konturlinien (Rippen) - direkt aus dem Referenzbild extrahiert (gleiche
+    // OpenCV-Methode wie die Aussenkontur), als duenne, gedaempfte Linien im Bananeninneren.
+    '<path d="M28.2 8.21 C28.34 8.84 29.04 10.74 29.03 12.0 C29.01 13.26 28.74 14.42 28.1 15.79 C27.47 17.16 26.46 18.87 25.24 20.23 C24.02 21.59 22.94 22.83 20.8 23.93 C18.66 25.02 14.68 26.41 12.39 26.79 C10.09 27.18 8.58 26.69 7.03 26.24 C5.47 25.79 3.64 24.64 3.05 24.11 C2.47 23.59 1.87 23.23 3.51 23.1 C5.16 22.96 10.26 23.7 12.94 23.28 C15.62 22.86 17.69 21.82 19.6 20.6 C21.51 19.38 23.24 17.5 24.41 15.98 C25.58 14.45 26.16 12.86 26.63 11.45 C27.09 10.03 27.09 8.13 27.18 7.47" fill="none" stroke="' + f.bananaTip + '" stroke-width="0.55" stroke-linecap="round" opacity="0.4"/>' +
+    '<path d="M26.53 7.01 C26.5 7.53 26.66 8.92 26.35 10.15 C26.04 11.39 25.92 12.71 24.68 14.41 C23.45 16.1 21.12 18.9 18.95 20.32 C16.78 21.74 14.21 22.59 11.65 22.91 C9.09 23.23 3.45 22.71 3.61 22.26 C3.76 21.82 10.28 20.92 12.57 20.23 C14.87 19.54 15.82 19.1 17.38 18.1 C18.94 17.1 20.52 16.07 21.91 14.22 C23.3 12.37 25.07 8.21 25.7 7.01" fill="none" stroke="' + f.bananaTip + '" stroke-width="0.55" stroke-linecap="round" opacity="0.4"/>' +
+    // weisse Glanzlichter
+    '<path d="M23 8.5 Q19.5 15 16 18 Q12 20.5 6.5 22" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" opacity="0.55"/>' +
+    '<ellipse cx="26.3" cy="4.6" rx="1.3" ry="0.8" fill="#ffffff" opacity="0.5" transform="rotate(-15 26.3 4.6)"/>' +
+    '</g>'
+  );
+}
+
+function gummyBearSvg(f) {
+  // Marco hat eine zweite Referenz-Vorlage geschickt (Baeren-Umriss mit Ohren-Innenlinien,
+  // Augen, Nase+Mund): "nimm die schwarzen Konturen als Vorlage, auch die innen". Gleiche
+  // Methode wie bei der Banane - Aussenkontur UND die inneren Konturen (Ohren, Augen,
+  // Nase/Mund) wurden per OpenCV direkt aus dem Referenzbild extrahiert (Schwellwert auf
+  // dunkle Linien-Pixel, Konturen vereinfacht, zu glatten geschlossenen Bezier-Kurven
+  // interpoliert, alle mit derselben Transformation auf 32x32 skaliert, damit sie exakt
+  // zueinander passen).
+  const outer = 'M9.87 2.38 C9.31 2.58 8.81 2.99 8.45 3.44 C8.1 3.89 7.84 4.58 7.74 5.09 C7.65 5.6 7.67 6.01 7.86 6.51 C8.05 7.0 8.74 7.4 8.86 8.04 C8.99 8.68 8.57 9.5 8.63 10.34 C8.69 11.17 9.38 12.29 9.22 13.05 C9.06 13.81 8.04 14.28 7.68 14.88 C7.33 15.48 7.14 16.03 7.09 16.65 C7.05 17.27 7.2 18.06 7.39 18.59 C7.58 19.13 8.09 19.16 8.22 19.83 C8.34 20.51 8.33 21.83 8.16 22.66 C7.98 23.5 7.28 24.1 7.15 24.85 C7.03 25.59 7.14 26.48 7.39 27.15 C7.64 27.81 8.11 28.42 8.63 28.86 C9.15 29.29 9.95 29.6 10.52 29.74 C11.09 29.88 11.23 29.89 12.05 29.68 C12.86 29.48 14.47 28.66 15.41 28.5 C16.35 28.35 16.91 28.53 17.71 28.74 C18.51 28.94 19.41 29.62 20.19 29.74 C20.96 29.86 21.72 29.73 22.37 29.45 C23.02 29.16 23.67 28.65 24.08 28.03 C24.49 27.41 24.77 26.41 24.85 25.73 C24.92 25.05 24.73 24.47 24.55 23.96 C24.37 23.45 23.92 23.29 23.78 22.66 C23.65 22.04 23.57 20.95 23.73 20.19 C23.88 19.42 24.55 18.7 24.73 18.06 C24.91 17.43 24.87 16.88 24.79 16.35 C24.71 15.82 24.6 15.44 24.26 14.88 C23.91 14.32 22.88 13.72 22.72 12.99 C22.57 12.26 23.25 11.34 23.31 10.52 C23.37 9.69 23.01 8.58 23.08 8.04 C23.15 7.5 23.54 7.65 23.73 7.27 C23.91 6.9 24.16 6.3 24.2 5.8 C24.24 5.3 24.18 4.76 23.96 4.26 C23.75 3.77 23.3 3.19 22.9 2.85 C22.5 2.5 22.09 2.28 21.54 2.2 C20.99 2.12 20.16 2.18 19.6 2.38 C19.04 2.57 18.74 3.26 18.18 3.38 C17.62 3.5 16.97 3.08 16.24 3.08 C15.5 3.08 14.5 3.53 13.76 3.38 C13.02 3.23 12.46 2.37 11.81 2.2 C11.16 2.03 10.43 2.17 9.87 2.38 Z';
+  const noseMouth = 'M13.11 11.58 C13.07 11.75 13.18 12.18 13.41 12.4 C13.63 12.63 14.06 12.9 14.47 12.93 C14.87 12.96 15.31 12.58 15.82 12.58 C16.33 12.58 17.1 12.94 17.53 12.93 C17.97 12.92 18.2 12.69 18.42 12.52 C18.63 12.35 18.77 12.11 18.83 11.93 C18.89 11.75 18.86 11.56 18.77 11.46 C18.68 11.36 18.49 11.25 18.3 11.34 C18.11 11.43 17.9 11.88 17.65 11.99 C17.41 12.1 17.02 12.1 16.83 11.99 C16.63 11.88 16.42 11.64 16.47 11.34 C16.52 11.05 17.12 10.49 17.12 10.22 C17.12 9.96 16.76 9.83 16.47 9.75 C16.19 9.67 15.68 9.69 15.41 9.75 C15.14 9.81 14.97 9.96 14.88 10.1 C14.79 10.25 14.78 10.43 14.88 10.63 C14.98 10.84 15.41 11.12 15.47 11.34 C15.53 11.56 15.41 11.81 15.23 11.93 C15.06 12.05 14.67 12.15 14.41 12.05 C14.14 11.95 13.86 11.42 13.64 11.34 C13.42 11.26 13.15 11.4 13.11 11.58 Z';
+  const eyeL = 'M12.17 8.45 C12.03 8.67 12.08 8.9 12.11 9.04 C12.14 9.18 12.24 9.24 12.34 9.28 C12.45 9.32 12.62 9.38 12.76 9.28 C12.89 9.18 13.05 8.79 13.17 8.69 C13.29 8.59 13.34 8.59 13.46 8.69 C13.59 8.79 13.8 9.18 13.94 9.28 C14.07 9.38 14.19 9.34 14.29 9.28 C14.39 9.22 14.53 9.11 14.53 8.92 C14.53 8.74 14.44 8.35 14.29 8.16 C14.14 7.96 13.87 7.81 13.64 7.74 C13.41 7.67 13.18 7.63 12.93 7.74 C12.69 7.86 12.3 8.24 12.17 8.45 Z';
+  const eyeR = 'M17.47 8.51 C17.33 8.72 17.39 8.85 17.42 8.98 C17.44 9.11 17.54 9.23 17.65 9.28 C17.76 9.33 17.91 9.39 18.06 9.28 C18.22 9.17 18.4 8.63 18.59 8.63 C18.79 8.63 19.08 9.17 19.24 9.28 C19.41 9.39 19.5 9.33 19.6 9.28 C19.7 9.23 19.82 9.15 19.83 8.98 C19.84 8.81 19.79 8.48 19.66 8.27 C19.52 8.07 19.23 7.83 19.01 7.74 C18.78 7.66 18.56 7.62 18.3 7.74 C18.04 7.87 17.62 8.3 17.47 8.51 Z';
+  const earL = 'M11.87 4.26 C11.73 4.14 11.38 4.1 11.11 4.15 C10.83 4.2 10.45 4.36 10.22 4.56 C9.99 4.76 9.83 5.06 9.75 5.33 C9.67 5.59 9.64 5.98 9.75 6.15 C9.86 6.32 10.2 6.49 10.4 6.33 C10.59 6.17 10.67 5.44 10.93 5.21 C11.18 4.97 11.77 5.07 11.93 4.91 C12.09 4.76 12.01 4.39 11.87 4.26 Z';
+  const earR = 'M20.19 4.21 C19.97 4.23 19.97 4.31 19.95 4.44 C19.93 4.57 19.89 4.84 20.07 4.97 C20.25 5.1 20.79 5.0 21.01 5.21 C21.24 5.41 21.26 6.02 21.43 6.21 C21.59 6.4 21.88 6.44 22.02 6.33 C22.15 6.22 22.26 5.81 22.25 5.56 C22.24 5.32 22.12 5.07 21.96 4.85 C21.79 4.64 21.54 4.37 21.25 4.26 C20.95 4.16 20.4 4.18 20.19 4.21 Z';
+  // Marco: "es fehlen die Konturen bei den Haenden und Fuessen" - die Naht-Kurven bei
+  // Armen/Beinen sind im Referenzbild eigene Tuschelinien, die knapp innerhalb der
+  // Aussenkontur verlaufen (beide Enden beruehren die Aussenlinie). Statt sie einzeln
+  // nachzuzeichnen, wird die exakte Ring-Innenkontur (ebenfalls per OpenCV aus dem Bild
+  // extrahiert) zusammen mit der Aussenkontur als EIN Pfad mit fill-rule="evenodd"
+  // gezeichnet - das fuellt automatisch genau die schwarze Tuschflaeche des Originals,
+  // inklusive der Arm-/Bein-Nahtboegen, ohne dass diese Boegen einzeln modelliert werden muessen.
+  const innerRing = 'M10.04 3.32 C10.49 3.14 11.13 2.97 11.69 3.14 C12.26 3.32 12.84 4.23 13.41 4.38 C13.98 4.53 14.26 4.03 15.12 4.03 C15.97 4.03 17.76 4.5 18.54 4.38 C19.31 4.26 19.36 3.54 19.77 3.32 C20.19 3.1 20.6 3.05 21.01 3.08 C21.43 3.12 21.9 3.29 22.25 3.56 C22.61 3.82 22.99 4.21 23.14 4.68 C23.28 5.15 23.32 5.87 23.14 6.39 C22.95 6.91 22.14 7.1 22.02 7.8 C21.89 8.5 22.43 9.67 22.37 10.57 C22.31 11.48 21.45 12.36 21.66 13.23 C21.88 14.09 23.32 14.94 23.67 15.76 C24.01 16.59 23.85 17.59 23.73 18.18 C23.6 18.77 23.19 19.02 22.9 19.3 C22.61 19.59 22.28 19.76 21.96 19.89 C21.63 20.02 21.28 20.1 20.95 20.07 C20.63 20.04 20.27 19.89 20.01 19.72 C19.75 19.54 19.54 19.34 19.42 19.01 C19.3 18.67 19.22 18.07 19.3 17.71 C19.38 17.35 19.57 17.08 19.89 16.83 C20.22 16.57 21.06 16.38 21.25 16.18 C21.44 15.97 21.33 15.61 21.01 15.59 C20.7 15.57 19.75 15.85 19.36 16.06 C18.97 16.27 18.83 16.52 18.65 16.83 C18.48 17.13 18.32 17.46 18.3 17.89 C18.28 18.31 18.31 18.91 18.54 19.36 C18.76 19.81 19.29 20.33 19.66 20.6 C20.02 20.87 20.18 20.93 20.72 20.95 C21.26 20.97 22.55 20.39 22.9 20.72 C23.25 21.04 22.69 22.27 22.84 22.9 C22.99 23.53 23.61 23.98 23.78 24.49 C23.96 25.0 23.99 25.46 23.9 25.97 C23.81 26.48 23.61 27.11 23.25 27.56 C22.9 28.01 22.36 28.5 21.78 28.68 C21.2 28.86 20.26 28.76 19.77 28.62 C19.29 28.48 19.11 28.14 18.89 27.85 C18.67 27.57 18.49 27.39 18.48 26.91 C18.47 26.43 18.64 25.42 18.83 24.96 C19.02 24.51 19.22 24.4 19.6 24.2 C19.97 23.99 20.8 23.89 21.07 23.73 C21.35 23.56 21.27 23.33 21.25 23.19 C21.23 23.06 21.29 22.88 20.95 22.9 C20.62 22.92 19.72 23.07 19.24 23.31 C18.77 23.56 18.41 23.94 18.12 24.37 C17.84 24.81 17.61 25.35 17.53 25.91 C17.45 26.47 18.18 27.43 17.65 27.74 C17.12 28.04 14.89 28.03 14.35 27.74 C13.81 27.44 14.48 26.5 14.41 25.97 C14.34 25.44 14.16 24.95 13.94 24.55 C13.71 24.15 13.45 23.82 13.05 23.55 C12.65 23.27 11.88 23.0 11.52 22.9 C11.15 22.8 11.01 22.85 10.87 22.96 C10.73 23.07 10.44 23.33 10.69 23.55 C10.95 23.76 11.95 23.9 12.4 24.26 C12.85 24.61 13.23 25.23 13.41 25.67 C13.58 26.11 13.52 26.55 13.46 26.91 C13.41 27.27 13.29 27.56 13.05 27.85 C12.82 28.15 12.46 28.52 12.05 28.68 C11.64 28.84 11.06 28.9 10.57 28.8 C10.09 28.7 9.52 28.37 9.16 28.09 C8.8 27.8 8.58 27.58 8.39 27.09 C8.21 26.6 7.91 25.88 8.04 25.14 C8.17 24.4 8.99 23.4 9.16 22.66 C9.33 21.93 8.81 21.0 9.04 20.72 C9.28 20.43 10.07 20.95 10.57 20.95 C11.08 20.95 11.62 20.91 12.05 20.72 C12.48 20.52 12.9 20.14 13.17 19.77 C13.43 19.41 13.64 19.06 13.64 18.54 C13.64 18.01 13.51 17.14 13.17 16.65 C12.83 16.16 11.96 15.75 11.58 15.59 C11.19 15.42 11.02 15.56 10.87 15.65 C10.72 15.73 10.51 15.93 10.69 16.12 C10.88 16.3 11.66 16.47 11.99 16.77 C12.32 17.06 12.62 17.49 12.7 17.89 C12.78 18.28 12.64 18.79 12.46 19.13 C12.28 19.46 11.99 19.74 11.64 19.89 C11.28 20.04 10.71 20.06 10.34 20.01 C9.96 19.96 9.77 19.98 9.39 19.6 C9.02 19.21 8.28 18.35 8.1 17.71 C7.91 17.07 7.91 16.5 8.27 15.76 C8.64 15.03 10.06 14.13 10.28 13.29 C10.5 12.44 9.63 11.61 9.57 10.69 C9.51 9.78 10.07 8.61 9.93 7.8 C9.78 7.0 8.83 6.46 8.69 5.86 C8.54 5.26 8.81 4.63 9.04 4.21 C9.27 3.78 9.6 3.5 10.04 3.32 Z';
+  return svgWrap(
+    grad('ggum', f.gummyHi, f.gummy) +
+    '<clipPath id="gumClip"><path d="' + outer + '"/></clipPath>',
+    '<path d="' + outer + '" fill="url(#ggum)"/>' +
+    '<path fill-rule="evenodd" fill="' + f.o + '" d="' + outer + ' ' + innerRing + '"/>' +
+    '<g clip-path="url(#gumClip)">' +
+    // Ohren-Innenlinien, Augen, Nase+Mund - alle als gefuellte Formen (so wie im
+    // Referenzbild als dicke Tuschelinie gezeichnet), Farbe wie die Aussenkontur.
+    '<path d="' + earL + '" fill="' + f.o + '"/>' +
+    '<path d="' + earR + '" fill="' + f.o + '"/>' +
+    '<path d="' + eyeL + '" fill="' + f.o + '"/>' +
+    '<path d="' + eyeR + '" fill="' + f.o + '"/>' +
+    '<path d="' + noseMouth + '" fill="' + f.o + '"/>' +
+    // weisses Glanzlicht
+    '<ellipse cx="11.5" cy="18" rx="2.6" ry="4.2" fill="#ffffff" opacity="0.25" transform="rotate(-10 11.5 18)"/>' +
+    '<ellipse cx="12.5" cy="4.6" rx="1.6" ry="0.9" fill="#ffffff" opacity="0.4" transform="rotate(-15 12.5 4.6)"/>' +
+    '</g>'
+  );
+}
+
+// Baut alle Futter-Icons einmal beim Start und legt sie unter ihrem "art"-Schluessel ab
+// (siehe FOOD-Liste oben und drawFood() weiter unten). Muss abgewartet werden, bevor das erste
+// Bild gezeichnet wird - siehe init() ganz am Ende der Datei.
+const FOOD_ART_BUILDERS = {
+  pizza: pizzaSvg, iceCream: iceCreamSvg, beer: beerSvg,
+  spaghetti: spaghettiSvg, aperol: aperolSvg, sushi: sushiSvg,
+  ramen: ramenSvg, banana: bananaSvg, gummyBear: gummyBearSvg
+};
+let foodImages = {};
+
+function loadImage(svg) {
+  return new Promise(function (resolve, reject) {
+    const img = new Image();
+    img.onload = function () { resolve(img); };
+    img.onerror = function () { reject(new Error('Ein Futter-Icon konnte nicht geladen werden.')); };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+}
+
+function preloadFoodImages() {
+  const keys = Object.keys(FOOD_ART_BUILDERS);
+  return Promise.all(keys.map(function (key) {
+    return loadImage(FOOD_ART_BUILDERS[key](COLORS.food)).then(function (img) {
+      foodImages[key] = img;
+    });
+  }));
+}
 
 // ---------------------------------------------------------------
 // 2) Zustand (alles, was sich im Spiel ändert, liegt hier)
@@ -428,23 +759,47 @@ function drawBoard() {
   }
 }
 
+// Futter-Symbole duerfen bewusst deutlich groesser als ein Feld sein (Wunsch von Marco: der
+// Standort auf dem Feld bleibt klar - die Raupe zielt weiterhin exakt auf die Feld-Mitte (cx, cy)
+// - aber der gezeichnete Gegenstand selbst darf sichtbar ueber die Feldgrenze hinausragen, damit
+// er auf dem Handy-Bildschirm besser erkennbar ist. Nach erster Rueckmeldung ("noch grösser")
+// nochmals vergroessert). FOOD_ICON_SIZE_FACTOR gilt fuer die fertigen SVG-Icons,
+// FOOD_PLACEHOLDER_RADIUS_FACTOR fuer die noch unfertigen Kreis-Platzhalter.
+const FOOD_ICON_SIZE_FACTOR = 1.75;
+const FOOD_PLACEHOLDER_RADIUS_FACTOR = 0.62;
+
 function drawFood() {
   if (!state.food) return;
   const food = FOOD[state.food.type];
   const cx = state.food.x * CELL + CELL / 2;
   const cy = state.food.y * CELL + CELL / 2;
+  const img = food.art ? foodImages[food.art] : null;
+
+  // Bereits gestaltete Sorten (Pizza/Eis/Bier): fertiges SVG-Icon mit Schatten darunter.
+  if (img) {
+    ctx.fillStyle = COLORS.shadow;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + CELL * 0.62, CELL * 0.5, CELL * 0.15, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const size = CELL * FOOD_ICON_SIZE_FACTOR;
+    ctx.drawImage(img, cx - size / 2, cy - size / 2 - CELL * 0.07, size, size);
+    return;
+  }
+
+  // Noch nicht gestaltete Sorten: unveraenderter Platzhalter (einfarbiger Kreis + Glanzpunkt),
+  // bis sie in einer spaeteren Stilprobe-Runde ein eigenes Icon bekommen.
   ctx.fillStyle = food.color;
   ctx.beginPath();
-  ctx.arc(cx, cy, CELL * 0.34, 0, Math.PI * 2);
+  ctx.arc(cx, cy, CELL * FOOD_PLACEHOLDER_RADIUS_FACTOR, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.55)';   // kleiner Glanzpunkt
   ctx.beginPath();
-  ctx.arc(cx - CELL * 0.11, cy - CELL * 0.11, CELL * 0.08, 0, Math.PI * 2);
+  ctx.arc(cx - CELL * 0.2, cy - CELL * 0.2, CELL * 0.15, 0, Math.PI * 2);
   ctx.fill();
 }
 
 // Platzhalter-Darstellung fuer den Boesewicht (einfacher dunkler Kreis mit zwei Augen) - echtes
-// Design folgt im Woche-2-Stilabgleich, genau wie bei Raupe und Futter.
+// Design folgt in einer spaeteren Stilprobe-Runde, genau wie bei den restlichen Futter-Sorten.
 function drawVillain() {
   if (!state.villainEnabled || !state.villain) return;
   const v = state.villain;
@@ -461,36 +816,221 @@ function drawVillain() {
   ctx.fill();
 }
 
-function drawSnake() {
-  // Vom Schwanz zum Kopf zeichnen, damit der Kopf zuoberst liegt
-  for (let i = state.snake.length - 1; i >= 0; i--) {
-    const s = state.snake[i];
-    const cx = s.x * CELL + CELL / 2;
-    const cy = s.y * CELL + CELL / 2;
-    ctx.fillStyle = i === 0 ? COLORS.head : (i % 2 === 0 ? COLORS.bodyA : COLORS.bodyB);
+// Radialer Farbverlauf (hell oben links, dunkler zum Rand) fuer die Kugel-Wirkung der
+// Koerperglieder, des Kopfs und der Fuehler-Spitzen - aus der bestaetigten Stilprobe uebernommen.
+function bodyFill(cx, cy, r, col) {
+  const g = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.08, cx, cy, r);
+  g.addColorStop(0, col.hi);
+  g.addColorStop(0.55, col.base);
+  g.addColorStop(1, col.lo);
+  return g;
+}
+
+// Dreieckiger Verbinder pro Segment (inkl. Kopf), zeigt zur jeweils naechsten/schwanzwaertigen
+// Kugel - schliesst die Luecke zwischen zwei benachbarten Kreisen. Haengt nur von der Lage der
+// Nachbar-Segmente in "path" ab, nicht von der aktuellen Blickrichtung - funktioniert dadurch
+// unveraendert bei jeder Kurve, die die Raupe waehrend des Spiels nimmt.
+function drawSegmentSpike(path, i, radiusFactor, fillColor) {
+  const cur = path[i];
+  const isLast = i === path.length - 1;
+  const ref = isLast ? path[i - 1] : path[i + 1];
+  let dx = isLast ? cur.x - ref.x : ref.x - cur.x;
+  let dy = isLast ? cur.y - ref.y : ref.y - cur.y;
+  const dlen = Math.hypot(dx, dy) || 1;
+  dx /= dlen; dy /= dlen;
+  const px = -dy, py = dx;
+
+  const r = (i === 0 ? radiusFactor + 0.06 : radiusFactor) * CELL;
+  const cx = cur.x * CELL + CELL / 2, cy = cur.y * CELL + CELL / 2;
+  const baseCx = cx + dx * r * 0.6, baseCy = cy + dy * r * 0.6;
+  const halfWidth = r * 0.4;
+  const tipX = cx + dx * r * 1.3, tipY = cy + dy * r * 1.3;
+
+  ctx.beginPath();
+  ctx.moveTo(baseCx - px * halfWidth, baseCy - py * halfWidth);
+  ctx.lineTo(tipX, tipY);
+  ctx.lineTo(baseCx + px * halfWidth, baseCy + py * halfWidth);
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = i === 0 ? COLORS.redOutline : COLORS.outline;
+  ctx.stroke();
+}
+
+// Fuehler (schwarzer Stiel, dunkelrote Verlaufs-Spitze), hinter den Augen angesetzt. "side" ist
+// -1 (oberer Fuehler) oder 1 (unterer Fuehler), relativ zur aktuellen Blickrichtung "dir" - im
+// Unterschied zur Stilprobe (dort war die Raupe immer nach rechts ausgerichtet) muss hier jede
+// Position ueber "dir" UND die dazu senkrechte Achse (px, py) berechnet werden, weil die Raupe im
+// echten Spiel in alle vier Richtungen unterwegs sein kann.
+function drawAntenna(hx, hy, r, side, dir) {
+  const px = -dir.y, py = dir.x;
+  const baseX = hx - dir.x * r * 0.05 + px * side * r * 0.65;
+  const baseY = hy - dir.y * r * 0.05 + py * side * r * 0.65;
+  const tipX = hx + dir.x * r * 0.52 + px * side * r * 1.0;
+  const tipY = hy + dir.y * r * 0.52 + py * side * r * 1.0;
+
+  const eyeX = hx + dir.x * CELL * 0.16 + px * side * CELL * 0.2;
+  const eyeY = hy + dir.y * CELL * 0.16 + py * side * CELL * 0.2;
+  const midX = (baseX + tipX) / 2, midY = (baseY + tipY) / 2;
+  let awayX = midX - eyeX, awayY = midY - eyeY;
+  const awayLen = Math.hypot(awayX, awayY) || 1;
+  awayX /= awayLen; awayY /= awayLen;
+  const ctrlX = midX + awayX * r * 0.5;
+  const ctrlY = midY + awayY * r * 0.5;
+
+  ctx.strokeStyle = COLORS.antenna.stroke;
+  ctx.lineWidth = Math.max(1.6, r * 0.14);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(baseX, baseY);
+  ctx.quadraticCurveTo(ctrlX, ctrlY, tipX, tipY);
+  ctx.stroke();
+
+  const tipR = r * 0.14;
+  ctx.fillStyle = bodyFill(tipX, tipY, tipR, COLORS.antenna.tip);
+  ctx.strokeStyle = COLORS.redOutline;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(tipX, tipY, tipR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+}
+
+// Baeckchen: je ein kleines dunkelrosa Oval zwischen Augenmittelpunkt und dem naeherliegenden
+// Mundende, auf gleicher Achse quer zur Blickrichtung wie die Augen. Der Abstand der beiden
+// Baeckchen zueinander wird verdoppelt (Wunsch aus der Stilprobe), aber NUR entlang dieser
+// Quer-Achse - die Komponente in Blickrichtung bleibt unveraendert. In der Stilprobe (Blick immer
+// nach rechts) war das einfach "cy staerker skalieren"; hier wird deshalb zuerst in
+// Blickrichtungs-/Quer-Komponente zerlegt, die Quer-Komponente verdoppelt und wieder
+// zusammengesetzt - damit es bei jeder der vier moeglichen Blickrichtungen gleich aussieht.
+function drawCheeks(hx, hy, headR, dir) {
+  const px = -dir.y, py = dir.x;
+  const mx = hx + dir.x * headR * 0.86, my = hy + dir.y * headR * 0.86;
+  const mHalf = headR * 0.14;
+  const rx = headR * 0.065, ry = headR * 0.16;
+
+  ctx.fillStyle = COLORS.cheek;
+  for (const side of [-1, 1]) {
+    const ex = hx + dir.x * CELL * 0.16 + px * side * CELL * 0.2;
+    const ey = hy + dir.y * CELL * 0.16 + py * side * CELL * 0.2;
+    const mex = mx + px * side * mHalf, mey = my + py * side * mHalf;
+    const cx0 = ex + 0.65 * (mex - ex);
+    const cy0 = ey + 0.65 * (mey - ey);
+
+    const relX = cx0 - hx, relY = cy0 - hy;
+    const forwardComp = relX * dir.x + relY * dir.y;
+    const sideComp = relX * px + relY * py;
+    const cx = hx + dir.x * forwardComp + px * (sideComp * 2.0);
+    const cy = hy + dir.y * forwardComp + py * (sideComp * 2.0);
+
     ctx.beginPath();
-    ctx.arc(cx, cy, i === 0 ? CELL * 0.48 : CELL * 0.44, 0, Math.PI * 2);
+    // Die Ellipse selbst wird mitgedreht: rx (kurze Achse) zeigt in Blickrichtung, ry (lange
+    // Achse) quer dazu - dafuer wird sie um den Winkel der aktuellen Blickrichtung rotiert. Bei
+    // Blick nach rechts (Winkel 0) ergibt das exakt dieselbe Ausrichtung wie in der Stilprobe
+    // (lange Achse vertikal); bei den anderen drei Richtungen dreht sie sich entsprechend mit.
+    const rotation = Math.atan2(dir.y, dir.x);
+    ctx.ellipse(cx, cy, rx, ry, rotation, 0, Math.PI * 2);
     ctx.fill();
   }
+}
 
-  // Augen am Kopf, in Bewegungsrichtung versetzt
-  const h = state.snake[0];
-  const hx = h.x * CELL + CELL / 2;
-  const hy = h.y * CELL + CELL / 2;
+// Mund: ein kurzer, duenner Bogen (leichtes Laecheln), vorne an der Kopfspitze, mittig zwischen
+// den beiden Augen.
+function drawMouth(hx, hy, r, dir) {
+  const mx = hx + dir.x * r * 0.86;
+  const my = hy + dir.y * r * 0.86;
+  const halfLen = r * 0.14;
+  const bulge = r * 0.05;
+  const px = -dir.y, py = dir.x;
+  const x1 = mx - px * halfLen, y1 = my - py * halfLen;
+  const x2 = mx + px * halfLen, y2 = my + py * halfLen;
+  const cx = mx + dir.x * bulge, cy = my + dir.y * bulge;
+
+  ctx.strokeStyle = COLORS.eyePupil;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(1, r * 0.05);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.quadraticCurveTo(cx, cy, x2, y2);
+  ctx.stroke();
+}
+
+// Zeichnet GENAU EIN Raupenglied (Schatten, Dreieck-Verbinder, Kugel, Glanzpunkt) - beim Kopf
+// (i===0) zusaetzlich alle Kopf-Verzierungen (Fuehler, Baeckchen, Augen, Mund), da diese fest am
+// Kopf haengen und immer zusammen mit ihm auf derselben "Tiefen-Ebene" liegen sollen. Bewusst als
+// einzelne, in sich abgeschlossene Funktion (statt wie frueher zwei separate Durchgaenge über alle
+// Glieder) - siehe draw()/drawSnakeSegment weiter unten: nur so lassen sich Futter und Boesewicht
+// zeilenweise dazwischen einsortieren (raeumliches "weiter unten = weiter vorne"-Gefuehl).
+function drawSnakeSegment(i) {
+  const path = state.snake;
   const d = state.dir;
-  const px = -d.y, py = d.x;   // Senkrechte zur Blickrichtung
+  const s = path[i];
+  const cx = s.x * CELL + CELL / 2;
+  const cy = s.y * CELL + CELL / 2;
+  const r = (i === 0 ? SNAKE_RADIUS_FACTOR + 0.06 : SNAKE_RADIUS_FACTOR) * CELL;
+
+  // Schatten
+  ctx.fillStyle = COLORS.shadow;
+  ctx.beginPath();
+  ctx.ellipse(cx + 1, cy + r * 0.72, r * 0.95, r * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Dreieck-Verbindungsstueck zum Nachbarglied, dann die Kugel selbst darueber (Farbverlauf via
+  // bodyFill), dann ein kleiner Glanzpunkt.
+  const col = i === 0 ? COLORS.head : COLORS.bands[i % 2];
+  drawSegmentSpike(path, i, SNAKE_RADIUS_FACTOR, col.base);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = bodyFill(cx, cy, r, col);
+  ctx.fill();
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = i === 0 ? COLORS.redOutline : COLORS.outline;
+  ctx.stroke();
+  ctx.fillStyle = COLORS.dot;
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.35, cy - r * 0.38, r * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (i !== 0) return;
+
+  // Kopf-Verzierungen (nur beim Kopf, i===0): Fuehler zuerst (hinter den Augen), dann Baeckchen,
+  // dann Augen mit Wimpern-Linie, dann Mund.
+  drawAntenna(cx, cy, r, -1, d);
+  drawAntenna(cx, cy, r, 1, d);
+  drawCheeks(cx, cy, r, d);
+
+  // Augen: weisser Kreis + Pupille, dazu eine feine schwarze Wimpern-Linie auf der Haelfte des
+  // Augenrands, die von der Pupille abgewandt ist. In der Stilprobe (Blick fix nach rechts) liess
+  // sich das als feste Bogen-Winkel (-90 Grad bis 90 Grad) schreiben; weil die Pupille hier bei
+  // jeder Blickrichtung in eine andere Richtung verschoben ist, wird die Bogen-Mitte stattdessen
+  // aus der jeweils aktuellen Gegenrichtung (-dir) berechnet - das ergibt bei Blick nach rechts
+  // exakt denselben Bogen wie in der Stilprobe, funktioniert aber auch bei den anderen drei
+  // Richtungen.
+  const px = -d.y, py = d.x;
   for (const side of [-1, 1]) {
-    const ex = hx + d.x * CELL * 0.16 + px * side * CELL * 0.2;
-    const ey = hy + d.y * CELL * 0.16 + py * side * CELL * 0.2;
+    const ex = cx + d.x * CELL * 0.16 + px * side * CELL * 0.2;
+    const ey = cy + d.y * CELL * 0.16 + py * side * CELL * 0.2;
+    const eyeR = CELL * 0.13;
     ctx.fillStyle = COLORS.eyeWhite;
     ctx.beginPath();
-    ctx.arc(ex, ey, CELL * 0.13, 0, Math.PI * 2);
+    ctx.arc(ex, ey, eyeR, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = COLORS.eyePupil;
     ctx.beginPath();
-    ctx.arc(ex + d.x * CELL * 0.04, ey + d.y * CELL * 0.04, CELL * 0.065, 0, Math.PI * 2);
+    ctx.arc(ex + d.x * CELL * 0.04, ey + d.y * CELL * 0.04, CELL * 0.085, 0, Math.PI * 2);
     ctx.fill();
+
+    ctx.strokeStyle = COLORS.lash;
+    ctx.lineWidth = Math.max(0.8, eyeR * 0.1);
+    ctx.beginPath();
+    const centerAngle = Math.atan2(-d.y, -d.x);
+    ctx.arc(ex, ey, eyeR, centerAngle - Math.PI / 2, centerAngle + Math.PI / 2);
+    ctx.stroke();
   }
+
+  // Mund: feiner, kurzer Strich vorne am Kopf, mittig zwischen den Augen
+  drawMouth(cx, cy, r, d);
 }
 
 function drawCenteredText(text) {
@@ -514,11 +1054,38 @@ function drawOverlay() {
   }
 }
 
+// Raeumliches Tiefengefuehl (Wunsch von Marco): ein Objekt, das WEITER UNTEN im Feld steht (groesserer
+// y-Wert = naeher am Betrachter gedacht), wird ueber ein Objekt gezeichnet, das weiter oben steht -
+// unabhaengig davon, ob es sich um ein Raupenglied, Futter oder den Boesewicht handelt. Dafuer werden
+// alle sichtbaren Objekte in eine gemeinsame Liste gesammelt, nach ihrer Feld-Zeile (y) aufsteigend
+// sortiert (kleines y zuerst = "weiter hinten"/wird zuerst gezeichnet, grosses y zuletzt = "weiter
+// vorne"/wird zuletzt gezeichnet und liegt damit oben) und erst dann der Reihe nach gezeichnet.
+// Frueher wurden Futter/Boesewicht immer VOR der ganzen Raupe gezeichnet, wodurch die Raupe selbst
+// beim Vorbeifahren an einem tiefer stehenden Futter-Symbol faelschlich darueber lag.
+// Futter/Boesewicht werden VOR den Raupengliedern in die Liste eingefuegt, die Raupenglieder
+// selbst vom Schwanz zum Kopf (wie zuvor). Das ist wichtig fuer die Stabilitaet von Array.sort():
+// bei GLEICHER Zeile bleibt die Einfuege-Reihenfolge erhalten, d. h. bei einem Gleichstand
+// gewinnt IMMER die Raupe (wird zuletzt / obenauf gezeichnet) - so wie Marco es wollte: "wenn
+// das Essen und der Kopf auf dem selben Feld sind, dann ist der Kopf wichtiger, das Essen wird ja
+// gegessen und verschwindet". Unter den Raupengliedern selbst sorgt dieselbe Stabilitaet dafuer,
+// dass bei GLEICHER Zeile (waagrechte Nachbarglieder) die Kopf-naeheren Glieder weiterhin wie
+// bisher ueber den schwanz-naeheren liegen.
 function draw() {
   drawBoard();
-  drawFood();
-  drawVillain();
-  drawSnake();
+
+  const drawables = [];
+  if (state.villainEnabled && state.villain) {
+    drawables.push({ y: state.villain.y, draw: drawVillain });
+  }
+  if (state.food) {
+    drawables.push({ y: state.food.y, draw: drawFood });
+  }
+  for (let i = state.snake.length - 1; i >= 0; i--) {
+    drawables.push({ y: state.snake[i].y, draw: drawSnakeSegment.bind(null, i) });
+  }
+  drawables.sort(function (a, b) { return a.y - b.y; });
+  for (const item of drawables) item.draw();
+
   drawOverlay();
 }
 
@@ -584,12 +1151,10 @@ function setEndLine(el, text) {
 // Waehlt den passenden Text fuer den Endbildschirm - abhaengig davon, ob das Ziel erreicht wurde
 // oder woran die Raupe gestorben ist (siehe state.overReason). Mit Marco abgestimmt (20.09.2026):
 // - Ziel erreicht: "Look, I am a beautiful butterfly!" (Platzhalter-Text bis zum echten
-//   Schmetterling-Bildschirm in Woche 2), plus Punktzahl kleiner darunter.
+//   Schmetterling-Bildschirm), plus Punktzahl kleiner darunter.
 // - Tod durch den Boesewicht: eigene Text-Variante ("It was a trap! / There was no food!"),
 //   UNABHAENGIG von der Punktzahl - auch bei 0 Punkten hat diese Variante Vorrang vor der
-//   "Nichts gegessen"-Variante unten, weil der Boesewicht die konkretere/interessantere Erklaerung
-//   fuer das Spielende liefert. Bewusste Priorisierung von Claude, noch nicht mit Marco
-//   gegengeprueft - siehe Rueckfrage in der Lieferantwort.
+//   "Nichts gegessen"-Variante unten (bestaetigt 20.09.2026).
 // - Kein Boesewicht-Tod, aber 0 Punkte: eigene "Nichts gegessen"-Variante ohne separate
 //   Punktzahl-Zeile (waere redundant zu "Nothing eaten").
 // - Kein Boesewicht-Tod, mindestens 1 Punkt: normale "still hungry"-Variante mit Punktzahl.
@@ -829,8 +1394,19 @@ function resetGame() {
   updateButtons();
 }
 
-function init() {
+// init() wartet jetzt zuerst auf preloadFoodImages() (die drei Futter-SVGs werden aus data:-URIs
+// geladen), bevor resetGame() zum ersten Mal zeichnet - sonst waere beim allerersten Frame
+// moeglicherweise noch kein Bild bereit, falls zufaellig Pizza/Eis/Bier als erstes Futter gewaehlt
+// wird. Bei data:-URIs (keine Netzwerk-Anfrage) ist das in der Praxis nahezu sofort fertig, ein
+// kurzer Ladezustand ist aber nicht sichtbar dargestellt (kein Spinner) - bewusste, unkritische
+// Vereinfachung, da kein Warten spuerbar sein sollte.
+async function init() {
   setupCanvas();
+  try {
+    await preloadFoodImages();
+  } catch (e) {
+    infoEl.textContent = 'Fehler beim Laden der Futter-Icons: ' + e.message;
+  }
   resetGame();
 }
 
