@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
@@ -31,8 +31,12 @@
     -webkit-user-select: none;
     user-select: none;
   }
-  h1 { margin: 0; font-size: 1.7rem; font-weight: 800; }
-  #score { margin: 0; font-size: 1rem; font-weight: 600; }
+  h1 { margin: 0; font-size: 1.7rem; font-weight: 800; -webkit-touch-callout: none; }
+  /* Live-Score (Punkt 6, 23.09.2026): tabular-nums haelt die Ziffernbreite konstant (kein Wackeln
+     der zentrierten Zeile bei jedem Punkt); die Zeile blendet waehrend Verpuppung/Schmetterling
+     weich aus (opacity statt display, damit das Layout nicht springt - siehe updateButtons()). */
+  #score { margin: 0; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; transition: opacity 0.35s ease; }
+  #score.score-hidden { opacity: 0; }
 
   #boardWrap {
     position: relative;
@@ -104,14 +108,30 @@
   }
   #overlayStatus, #endTitle { margin: 0; font-weight: 700; font-size: 1.05rem; text-align: center; }
   #endLine1, #endLine2 { margin: 0; font-size: 0.95rem; text-align: center; }
-  #endScore { margin: 0; font-size: 0.8rem; opacity: 0.85; text-align: center; }
+  /* Pause-Panel (Punkt 6): gleiche Titelschrift wie der Game-Over-Titel (1.365rem = 1.05rem x 1.3). */
+  #pauseControls { display: none; flex-direction: column; align-items: center; gap: 10px; }
+  #pauseTitle { margin: 0; font-weight: 700; font-size: 1.365rem; text-align: center; }
+  /* "Eat again!"-Button im Panel: gleiche Groesse wie Retry (#restartBtn, 1.3rem) auf dem Endbildschirm. */
+  #resumeBtn { font-size: 1.3rem; }
   /* Highscore-Anzeige (bestaetigte Stilprobe stilprobe-highscore.html, Variante v3): "Highscore"
      in der Score-Zeile oben etwas zurueckgenommen, damit der aktuelle Score die Hauptzahl bleibt;
      Startbildschirm-Zeile im selben kleinen Stil wie #endScore; Rekord-Hinweis in Gold aus der
      bestehenden Palette (COLORS.food.cheeseHi / COLORS.morpho.gold.hi), keine neue Farbe. */
   #score .best { font-weight: 500; opacity: 0.7; }
+  /* Punkt-Animation: die Zahl wird kurz gross ('Pop'), wenn sie steigt (Klasse .pop, siehe popNum()).
+     transform aendert das Layout nicht - auch bei dreistelligen Zahlen keine Verschiebung. */
+  #score .num { display: inline-block; }
+  #score .num.pop { animation: scorePop 0.3s ease-out; }
+  @keyframes scorePop { 0% { transform: scale(1); } 35% { transform: scale(1.35); } 100% { transform: scale(1); } }
+  /* Rekord live: Highscore-Zahl in Gold (dunkleres Gold als .recordInline, weil die Zeile auf dem
+     hellen Seitenhintergrund liegt und nicht wie das Panel auf Dunkelgruen). */
+  #score .best.record { opacity: 1; }
+  #score .best.record .num { color: #a06a10; font-weight: 800; }
+  @media (prefers-reduced-motion: reduce) {
+    #score .num.pop { animation: none; }
+    #score { transition: none; }
+  }
   #bestLine { margin: 0; font-size: 1.04rem; opacity: 0.85; text-align: center; }
-  .recordInline { font-weight: 700; color: #ffe58f; }
 
   /* 'won'-spezifisch (bestaetigter Schmetterling-Endbildschirm, siehe
      stilprobe-schmetterling-canvas.html, finale Bestaetigung "das passt"): Panel sitzt unten statt
@@ -156,8 +176,34 @@
      Quellreihenfolge weiterhin gewinnt. */
   #endTitle { font-size: 1.365rem; }
   #endLine1, #endLine2 { font-size: 1.235rem; }
-  #endScore { font-size: 1.04rem; }
   #restartBtn { font-size: 1.3rem; }
+
+  /* Endbildschirm-Inhalt (Stilprobe stilprobe-endbildschirme-inhalt.html): Farbakzent je Variante +
+     Score-Zeile als "Pills". Die Variante steht als data-variant am #centerOverlay (gesetzt in
+     applyEndScreenText(), entfernt in updateButtons(), sobald das Panel nicht mehr Endbildschirm
+     ist - sonst wuerde der Streifen auch auf Start-/Pause-Panel erscheinen). Der Akzent ist ein
+     4-px-Streifen oben im Panel per inset box-shadow (aendert kein Layout) plus Titelfarbe; der
+     Schmetterling-Titel bleibt bewusst weiss (28px-Titel unveraendert, nur der Streifen). */
+  #centerOverlay[data-variant] .panel { box-shadow: inset 0 4px 0 var(--accent); }
+  #centerOverlay[data-variant="wall"]     { --accent: #ffa45c; }
+  #centerOverlay[data-variant="self"]     { --accent: #8fe3a8; }
+  #centerOverlay[data-variant="villain"]  { --accent: #c9a0ff; }
+  #centerOverlay[data-variant="starving"] { --accent: #9dc4e6; }
+  #centerOverlay[data-variant="won"]      { --accent: #17c2c9; }
+  #centerOverlay[data-variant]:not([data-variant="won"]) #endTitle { color: var(--accent); }
+  #endScore { margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 8px; }
+  .pill {
+    display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap;
+    padding: 3px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.12);
+    font-size: 1.04rem; line-height: 1.3; font-variant-numeric: tabular-nums;
+  }
+  .pill .lbl { font-size: 0.8em; opacity: 0.75; }
+  .pill .val { font-weight: 700; }
+  /* Rekord-Pill in Gold aus der bestehenden Palette (COLORS.morpho.gold.hi = #ffe58f). */
+  .pill.record { background: rgba(255, 229, 143, 0.2); color: #ffe58f; font-weight: 700; }
+  .pill.record .lbl { font-size: 1em; opacity: 1; }
+  @media (max-width: 380px) { .pill { font-size: 0.95rem; padding: 3px 10px; } }
+  @media (max-width: 340px) { #endScore { gap: 6px; } .pill { font-size: 0.85rem; padding: 3px 8px; gap: 4px; } }
 
   /* Startbildschirm horizontal (bestaetigte Stilprobe stilprobe-startbildschirm-horizontal.html,
      Variante A, 23.09.2026): das Panel wird NUR waehrend der Ready-Phase breiter und flacher statt
@@ -195,6 +241,14 @@
      1.7745rem). */
   #overlayStatus { font-size: 1.7745rem; text-align: left; }
   #bestLine { text-align: left; }
+  /* Punkt 11: Auf sehr schmalen Screens (<= 360 px) ragte "Ready?" (28.4 px) in die rechte Spalte
+     (gemessen: 13 px Ueberlappung bei 320 px, 10 px bei 330, 6 px bei 340, 3 px bei 350). Die
+     Zwei-Spalten-Anordnung bleibt, nur die Schrift dieser einen Zeile wird gestaffelt kleiner.
+     Steht bewusst NACH der Grundregel oben (gleiche Spezifitaet, spaetere Regel gewinnt). Ab
+     361 px bleibt alles unveraendert. Highscore-Zeile und Buttons brauchen keine Anpassung
+     (kein Ueberlauf gemessen). */
+  @media (max-width: 360px) { #overlayStatus { font-size: 1.5rem; } }
+  @media (max-width: 340px) { #overlayStatus { font-size: 1.3rem; } }
   #modeSelect { display: flex; gap: 8px; flex-wrap: wrap; }
   #goalInputWrap { display: flex; align-items: center; gap: 6px; font-size: 1.235rem; }
   #goalInputWrap input[type="number"] {
@@ -214,12 +268,19 @@
   #pauseBtn { display: none; }
 
   #hint { margin: 0; font-size: 0.85rem; opacity: 0.75; text-align: center; }
+  /* Hinweis je nach Geraet: Touch-Geraete (kein Hover, grober Zeiger) sehen den Wisch-Hinweis,
+     alle anderen den Tastatur-Hinweis. */
+  #hint .hint-touch { display: none; }
+  @media (hover: none) and (pointer: coarse) {
+    #hint .hint-keys { display: none; }
+    #hint .hint-touch { display: inline; }
+  }
   /* Entwicklerzeile: vor dem Anlass komplett entfernen */
   #info { margin: 0; font: 12px ui-monospace, Consolas, monospace; opacity: 0.55; text-align: center; }
 </style>
 </head>
 <body>
-  <h1>The Very Hungry ConcorPillar</h1>
+  <h1 id="gameTitle">The Very Hungry ConcorPillar</h1>
   <p id="score"></p>
   <div id="boardWrap">
     <canvas id="board"></canvas>
@@ -237,18 +298,22 @@
             </div>
             <div id="goalInputWrap">
               <label for="goalInput">Target:</label>
-              <input type="number" id="goalInput" min="1" max="200" step="1" value="50">
+              <input type="number" id="goalInput" min="1" max="200" step="1" value="50" enterkeyhint="go">
             </div>
             <p id="goalError"></p>
             <label id="villainLabel"><input type="checkbox" id="villainCheckbox"> Villain</label>
             <button id="startBtn" class="game-btn" type="button">Start</button>
           </div>
         </div>
+        <div id="pauseControls">
+          <p id="pauseTitle">Take a Break!</p>
+          <button id="resumeBtn" class="game-btn" type="button">Eat again!</button>
+        </div>
         <div id="endControls">
           <p id="endTitle"></p>
+          <p id="endScore"></p>
           <p id="endLine1"></p>
           <p id="endLine2"></p>
-          <p id="endScore"></p>
           <button id="restartBtn" class="game-btn" type="button">Retry</button>
         </div>
       </div>
@@ -257,7 +322,7 @@
   <div id="controls">
     <button id="pauseBtn" class="game-btn" type="button">Take a Break!</button>
   </div>
-  <p id="hint">Pfeiltasten/WASD oder Wischen steuern · Start/Pause/Neustart per Button oder Leertaste</p>
+  <p id="hint"><span class="hint-keys">Arrow keys / WASD to steer · Space to pause or retry</span><span class="hint-touch">Swipe to steer</span></p>
   <p id="info"></p>
 
 <script>
@@ -797,6 +862,8 @@ const boardWrap = document.getElementById('boardWrap');
 const centerOverlay = document.getElementById('centerOverlay');
 const readyControls = document.getElementById('readyControls');
 const endControls = document.getElementById('endControls');
+const pauseControls = document.getElementById('pauseControls');
+const resumeBtn = document.getElementById('resumeBtn');
 const overlayStatus = document.getElementById('overlayStatus');
 const bestLine = document.getElementById('bestLine');
 const endTitle = document.getElementById('endTitle');
@@ -832,9 +899,33 @@ function isOpposite(a, b) {
 // Prüft die 180-Grad-Sperre immer gegen die tatsächlich aktive Richtung (state.dir), nie gegen
 // eine bereits vorgemerkte state.nextDir - so kann ein zweiter, schneller Steuerbefehl vor dem
 // nächsten Tick keine Wende "durchschmuggeln", die in der Summe 180 Grad ergibt.
+// Uebernimmt die auf dem Startbildschirm gewaehlten Einstellungen (Modus, Zielwert, Boesewicht) in
+// den state - erst beim Start, damit bis dahin nichts ein laufendes Spiel beeinflusst. Gibt false
+// zurueck (und zeigt den Fehlertext), wenn der Zielwert im Ziel-Modus ungueltig ist; dann startet
+// das Spiel nicht. Wird von JEDEM Start-Weg benutzt (Start-Button, Pfeiltaste/WASD, Wischen) -
+// vorher lief diese Uebernahme nur im Start-Button-Listener, sodass ein Start per Pfeiltaste oder
+// Wischen die Einstellungen ignorierte (z. B. blieb ein altes Ziel stehen bzw. der Endlos-Modus
+// aktiv, obwohl "Goal" gewaehlt war).
+function applyStartSettings() {
+  if (state.mode === 'goal') {
+    const raw = parseInt(goalInput.value, 10);
+    if (!Number.isInteger(raw) || raw < 1 || raw > MAX_GOAL_TARGET) {
+      goalError.textContent = 'Please enter a whole number between 1 and ' + MAX_GOAL_TARGET + '.';
+      return false;
+    }
+    goalError.textContent = '';
+    state.goalTarget = raw;
+  } else {
+    state.goalTarget = null;
+  }
+  state.villainEnabled = !!villainCheckbox.checked;
+  return true;
+}
+
 function handleDirectionInput(dir) {
   if (state.phase === 'over' || state.phase === 'won' || state.phase === 'paused' || state.phase === 'cocoon') return;
   if (isOpposite(dir, state.dir)) return;
+  if (state.phase === 'ready' && !applyStartSettings()) return;
   state.nextDir = dir;
   if (state.phase === 'ready') {
     state.phase = 'running';
@@ -2405,25 +2496,11 @@ function drawButterfly() {
   ctx.restore();
 }
 
-function drawCenteredText(text) {
-  ctx.save();
-  ctx.fillStyle = 'rgba(47, 61, 44, 0.75)';
-  ctx.fillRect(0, BOARD_PX / 2 - 26, BOARD_PX, 52);
-  ctx.fillStyle = '#f6f1e7';
-  ctx.font = 'bold 20px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, BOARD_PX / 2, BOARD_PX / 2);
-  ctx.restore();
-}
-
-// Sichtbarer Hinweis auf dem Spielfeld selbst. Nur noch fuer "Pause" - bei "ready"/"over"/"won"
-// steht der Text zusammen mit dem jeweiligen Button im HTML-Panel (siehe updateButtons()), damit
-// sich nicht zwei unterschiedlich breite Elemente (Canvas-Text + Button) gegenseitig ueberlagern.
+// Auf dem Canvas liegt nur noch der Schmetterling. Alle Texte (Start, Pause, Ende) stehen im
+// HTML-Panel (siehe updateButtons()) - der frueher hier gezeichnete Pause-Balken (drawCenteredText)
+// ist seit Punkt 6 (23.09.2026) durch das Pause-Panel ersetzt und entfernt.
 function drawOverlay() {
-  if (state.phase === 'paused') {
-    drawCenteredText('Take a Break!');
-  } else if (state.phase === 'won') {
+  if (state.phase === 'won') {
     drawButterfly();
   }
 }
@@ -2549,11 +2626,41 @@ function revealWonPanel() {
   centerOverlay.classList.remove('won-pending');
 }
 
+// Live-Score-Zeile (Punkt 6): die Elemente werden EINMAL aufgebaut und danach nur noch mit neuen
+// Zahlen befuellt (frueher replaceChildren bei jedem Tick). Nur so kann die Punkt-Animation laufen,
+// ohne dass sie bei jedem Tick durch ein neu erzeugtes Element neu startet.
+let scoreNumEl = null, bestEl = null, bestNumEl = null;
+let shownScore = null, shownBest = null;   // zuletzt angezeigte Werte (null = noch nichts)
+
+function popNum(el) {
+  el.classList.remove('pop');
+  void el.offsetWidth;   // Reflow, damit die Animation bei jedem neuen Punkt neu startet
+  el.classList.add('pop');
+}
+
 function updateScore() {
-  const best = document.createElement('span');
-  best.className = 'best';
-  best.textContent = 'Highscore: ' + displayedHighscore();
-  scoreEl.replaceChildren(document.createTextNode('Score: ' + state.score + ' \u00b7 '), best);
+  if (!scoreNumEl) {
+    scoreNumEl = document.createElement('span');
+    scoreNumEl.className = 'num';
+    bestNumEl = document.createElement('span');
+    bestNumEl.className = 'num';
+    bestEl = document.createElement('span');
+    bestEl.className = 'best';
+    bestEl.append('Highscore: ', bestNumEl);
+    scoreEl.replaceChildren('Score: ', scoreNumEl, ' \u00b7 ', bestEl);
+  }
+  const score = state.score, best = displayedHighscore();
+  scoreNumEl.textContent = score;
+  bestNumEl.textContent = best;
+  // Pop nur beim ANSTIEG (nicht beim Zuruecksetzen auf 0 nach Neustart, nicht beim ersten Aufbau).
+  if (shownScore !== null && score > shownScore) popNum(scoreNumEl);
+  if (shownBest !== null && best > shownBest) popNum(bestNumEl);
+  shownScore = score;
+  shownBest = best;
+  // Gold: Rekord wird gerade geknackt (nur wenn es schon einen Highscore gab - sonst waere auf einem
+  // frischen Geraet jeder erste Punkt ein "Rekord") ODER die Runde ist mit Rekord beendet
+  // (state.newRecord; commitHighscore() hat state.highscore dann schon angehoben).
+  bestEl.classList.toggle('record', state.newRecord || (state.highscore > 0 && state.score > state.highscore));
 }
 
 function updateInfo() {
@@ -2594,57 +2701,78 @@ function setEndLine(el, text) {
   }
 }
 
-// Waehlt den passenden Text fuer den Endbildschirm - abhaengig davon, ob das Ziel erreicht wurde
-// oder woran die Raupe gestorben ist (siehe state.overReason). Mit Marco abgestimmt (20.09.2026):
-// - Ziel erreicht: "Look, I am a beautiful butterfly!" (Platzhalter-Text bis zum echten
-//   Schmetterling-Bildschirm), plus Punktzahl kleiner darunter.
-// - Tod durch den Boesewicht: eigene Text-Variante ("It was a trap! / There was no food!"),
-//   UNABHAENGIG von der Punktzahl - auch bei 0 Punkten hat diese Variante Vorrang vor der
-//   "Nichts gegessen"-Variante unten (bestaetigt 20.09.2026).
-// - Kein Boesewicht-Tod, aber 0 Punkte: eigene "Nichts gegessen"-Variante ohne separate
-//   Punktzahl-Zeile (waere redundant zu "Nothing eaten").
-// - Kein Boesewicht-Tod, mindestens 1 Punkt: normale "still hungry"-Variante mit Punktzahl.
-// Score-Zeile auf dem Endbildschirm (Stilprobe v3): "Score: X · New highscore!" (Gold) bei neuem
-// Rekord, sonst "Score: X · Highscore: Y". Ohne Score-Zeile (0 Punkte, "Nothing eaten") wird nur
-// der Highscore gezeigt, falls es schon einen gibt.
-function setEndScoreLine(withScore) {
-  endScore.replaceChildren();
-  if (withScore && state.newRecord) {
-    const rec = document.createElement('span');
-    rec.className = 'recordInline';
-    rec.textContent = 'New highscore!';
-    endScore.append('Score: ' + state.score + ' \u00b7 ', rec);
-  } else if (withScore) {
-    endScore.append('Score: ' + state.score + ' \u00b7 Highscore: ' + state.highscore);
-  } else if (state.highscore > 0) {
-    endScore.append('Highscore: ' + state.highscore);
-  }
-  endScore.style.display = endScore.textContent ? 'block' : 'none';
-}
-
+// Waehlt Text und Farbvariante (data-variant, siehe CSS "Endbildschirm-Inhalt") fuer den
+// Endbildschirm - abhaengig davon, ob das Ziel erreicht wurde oder woran die Raupe gestorben ist
+// (siehe state.overReason). Mit Marco abgestimmt (20.09.2026, Wand/sich selbst getrennt 23.09.2026):
+// - Ziel erreicht ('won'): "Look, I am a beautiful butterfly!" plus Score-Zeile.
+// - Tod durch den Boesewicht ('villain'): "It was a trap! / There was no food!", UNABHAENGIG von
+//   der Punktzahl - auch bei 0 Punkten hat diese Variante Vorrang vor 'starving' (bestaetigt 20.09.2026).
+// - Kein Boesewicht-Tod, aber 0 Punkte ('starving'): "Nothing eaten" ohne Score-Pill (waere
+//   redundant), nur der Highscore, falls es schon einen gibt.
+// - Wand ('wall') bzw. eigener Koerper ('self') mit mindestens 1 Punkt: je eigener Ausruf plus
+//   "still hungry", mit Score-Zeile.
 function applyEndScreenText() {
+  let variant;
   if (state.phase === 'won') {
+    variant = 'won';
     setEndLine(endTitle, 'Look, I am a beautiful BUTTERFLY!');
     setEndLine(endLine1, '');
     setEndLine(endLine2, '');
     setEndScoreLine(true);
-    return;
-  }
-
-  setEndLine(endTitle, 'Game Over');
-  if (state.overReason === 'villain') {
-    setEndLine(endLine1, 'It was a trap!');
-    setEndLine(endLine2, 'There was no food!');
-    setEndScoreLine(true);
-  } else if (state.score === 0) {
-    setEndLine(endLine1, 'ConcorPillar is starving!');
-    setEndLine(endLine2, 'Nothing eaten');
-    setEndScoreLine(false);
   } else {
-    setEndLine(endLine1, 'ConcorPillar is still hungry!');
-    setEndLine(endLine2, '');
-    setEndScoreLine(true);
+    setEndLine(endTitle, 'Game Over');
+    if (state.overReason === 'villain') {
+      variant = 'villain';
+      setEndLine(endLine1, 'It was a trap!');
+      setEndLine(endLine2, 'There was no food!');
+      setEndScoreLine(true);
+    } else if (state.score === 0) {
+      variant = 'starving';
+      setEndLine(endLine1, 'ConcorPillar is starving!');
+      setEndLine(endLine2, 'Nothing eaten');
+      setEndScoreLine(false);
+    } else {
+      variant = state.overReason === 'self' ? 'self' : 'wall';
+      setEndLine(endLine1, variant === 'self' ? 'Oops, that was my own tail!' : 'Bonk! That was a wall.');
+      setEndLine(endLine2, 'ConcorPillar is still hungry!');
+      setEndScoreLine(true);
+    }
   }
+  centerOverlay.dataset.variant = variant;
+}
+
+// Score-Zeile des Endbildschirms als "Pills" (Stilprobe stilprobe-endbildschirme-inhalt.html):
+// [Score X] [Highscore Y], bei neuem Rekord [Score X] [New highscore!] (Gold), ohne Score
+// (0 Punkte) nur [Highscore Y], falls schon einer existiert. Aufbau per createElement/textContent
+// statt innerHTML - die Zahlen kommen zwar aus dem eigenen state, aber so bleibt es auch bei einem
+// manipulierten localStorage-Wert ein reiner Text.
+function makePill(label, value, extraClass) {
+  const pill = document.createElement('span');
+  pill.className = extraClass ? 'pill ' + extraClass : 'pill';
+  const lbl = document.createElement('span');
+  lbl.className = 'lbl';
+  lbl.textContent = label;
+  pill.append(lbl);
+  if (value !== null) {
+    const val = document.createElement('span');
+    val.className = 'val';
+    val.textContent = String(value);
+    pill.append(val);
+  }
+  return pill;
+}
+
+function setEndScoreLine(withScore) {
+  endScore.replaceChildren();
+  if (withScore) {
+    endScore.append(makePill('Score', state.score, ''));
+    endScore.append(state.newRecord
+      ? makePill('New highscore!', null, 'record')
+      : makePill('Highscore', state.highscore, ''));
+  } else if (state.highscore > 0) {
+    endScore.append(makePill('Highscore', state.highscore, ''));
+  }
+  endScore.style.display = endScore.childElementCount ? 'flex' : 'none';
 }
 
 // Zeigt/versteckt Start- bzw. Endbildschirm-Bereich je nach Spielphase, und setzt die jeweiligen
@@ -2652,12 +2780,17 @@ function applyEndScreenText() {
 // kann (siehe startLoop/stopLoop/step/resetGame unten).
 function updateButtons() {
   const phase = state.phase;
+  // Score-Zeile waehrend Verpuppung, Schmetterling UND Game Over weich ausblenden (Punkt 6, in
+  // Punkt 10 um 'over' erweitert): der Score steht danach im Panel (Pillen), die Zeile ueber dem
+  // Feld wiederholte ihn nur. opacity statt display, daher kein Layout-Sprung. Wieder sichtbar,
+  // sobald die Phase verlassen wird (Retry).
+  scoreEl.classList.toggle('score-hidden', phase === 'cocoon' || phase === 'won' || phase === 'over');
   // Vor dem Umschalten der phase-won-Klasse pruefen, ob wir GERADE ERST in 'won' wechseln -
   // updateButtons() wird pro 'won'-Aufenthalt mehrfach aufgerufen (u. a. einmal aus stopLoop()
   // heraus und danach nochmal am Ende von step()), die Verzoegerungs-Sequenz (siehe unten) darf
   // aber nur EINMAL starten, sonst wuerde jeder weitere Aufruf den Timer neu aufsetzen.
   const enteringWon = phase === 'won' && !centerOverlay.classList.contains('phase-won');
-  const showCenter = phase === 'ready' || phase === 'over' || phase === 'won';
+  const showCenter = phase === 'ready' || phase === 'over' || phase === 'won' || phase === 'paused';
   centerOverlay.style.display = showCenter ? 'flex' : 'none';
   // 'won'-spezifisches CSS (Panel unten statt mittig, groesserer Titel - siehe Schmetterling-CSS
   // weiter oben) nur in genau diesem Zustand aktiv, 'ready'/'over' bleiben unveraendert mittig.
@@ -2684,8 +2817,10 @@ function updateButtons() {
   // .panel weiter oben, bestaetigte Stilprobe stilprobe-startbildschirm-horizontal.html) nur auf
   // dem Startbildschirm aktiv - 'over'/'won' behalten das bisherige schmale Panel.
   centerOverlay.classList.toggle('phase-ready', phase === 'ready');
+  if (phase !== 'over' && phase !== 'won') centerOverlay.removeAttribute('data-variant');
   readyControls.style.display = phase === 'ready' ? 'flex' : 'none';
   endControls.style.display = (phase === 'over' || phase === 'won') ? 'flex' : 'none';
+  pauseControls.style.display = phase === 'paused' ? 'flex' : 'none';
 
   if (phase === 'ready') {
     overlayStatus.textContent = 'Ready?';
@@ -2696,9 +2831,9 @@ function updateButtons() {
     applyEndScreenText();
   }
 
-  const showPause = phase === 'running' || phase === 'paused';
-  pauseBtn.style.display = showPause ? 'inline-block' : 'none';
-  pauseBtn.textContent = phase === 'paused' ? 'Eat More!' : 'Take a Break!';
+  // Der Button unter dem Feld erscheint nur waehrend des Spiels; in der Pause liegt "Eat again!"
+  // im Panel (resumeBtn, siehe HTML).
+  pauseBtn.style.display = phase === 'running' ? 'inline-block' : 'none';
 }
 
 function step() {
@@ -2755,10 +2890,40 @@ function togglePause() {
 // ---------------------------------------------------------------
 // 7) Ereignisse (Tastatur + Swipe + Buttons - alle rufen dieselben Funktionen auf)
 // ---------------------------------------------------------------
+// Ist das Ziel des Tastendrucks ein Feld, in dem man normalerweise tippt (Zahl-/Textfeld,
+// Textbereich, Auswahlliste, editierbarer Bereich)? Checkbox/Radio/Button zaehlen bewusst NICHT
+// dazu - dort sollen Pfeiltasten weiter das Spiel steuern.
+function isTypingTarget(el) {
+  if (!el || el.nodeType !== 1) return false;
+  const tag = el.tagName;
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (tag === 'INPUT') return !/^(checkbox|radio|button|submit|reset|image|file|color|range)$/i.test(el.type);
+  return el.isContentEditable;
+}
+
 document.addEventListener('keydown', function (e) {
+  // Punkt 10: In einem Eingabefeld gehoert die Tastatur dem Feld (Pfeiltasten: Wert aendern bzw.
+  // Cursor bewegen, Buchstaben/Leertaste: tippen) - kein preventDefault, keine Spielsteuerung.
+  // Einzige Ausnahme: Enter im Zielwert-Feld startet das Spiel, mit derselben Pruefung wie der
+  // Start-Button (ungueltiger Zielwert -> Fehlertext, kein Start). Nach dem Start verliert das Feld
+  // den Fokus, damit die folgenden Pfeiltasten das Spiel steuern.
+  if (isTypingTarget(e.target)) {
+    if ((e.code === 'Enter' || e.code === 'NumpadEnter') && e.target === goalInput
+        && !e.repeat && state.phase === 'ready') {
+      e.preventDefault();
+      handleDirectionInput(state.dir);
+      if (state.phase === 'running') goalInput.blur();
+    }
+    return;
+  }
+
   const dir = DIR_KEYS[e.code];
   const isSpace = e.code === 'Space';
   if (!dir && !isSpace) return;
+
+  // Leertaste auf einem fokussierten Button/Checkbox: den Browser die Bedienung erledigen lassen
+  // (Button klicken bzw. Haken setzen), sonst wuerde sie doppelt wirken (Spiel + Element).
+  if (isSpace && e.target.closest && e.target.closest('button, input, select, a')) return;
 
   e.preventDefault();     // verhindert Scrollen der Seite, auch bei Pfeiltasten
   if (e.repeat) return;   // gehaltene Taste soll nicht mehrfach auslösen
@@ -2780,25 +2945,14 @@ modeEndlessBtn.addEventListener('click', function () { setMode('endless'); });
 modeGoalBtn.addEventListener('click', function () { setMode('goal'); });
 
 // Start-, Neustart- und Pause-Button: dieselben Funktionen wie Tastatur/Swipe, nur ein anderer
-// Ausloeser. "Start" liest zusaetzlich die auf dem Startbildschirm gewaehlten Einstellungen
-// (Modus, Zielwert, Boesewicht) und uebernimmt sie erst jetzt in den state - bis zum Klick auf
-// Start kann also noch alles geaendert werden, ohne ein laufendes Spiel zu beeinflussen.
+// Ausloeser. Die auf dem Startbildschirm gewaehlten Einstellungen (Modus, Zielwert, Boesewicht)
+// werden erst beim Start in den state uebernommen (applyStartSettings(), aufgerufen aus
+// handleDirectionInput()) - bis dahin kann noch alles geaendert werden, ohne ein laufendes Spiel
+// zu beeinflussen.
 startBtn.addEventListener('click', function () {
   if (state.phase !== 'ready') return;
-
-  if (state.mode === 'goal') {
-    const raw = parseInt(goalInput.value, 10);
-    if (!Number.isInteger(raw) || raw < 1 || raw > MAX_GOAL_TARGET) {
-      goalError.textContent = 'Please enter a whole number between 1 and ' + MAX_GOAL_TARGET + '.';
-      return;
-    }
-    goalError.textContent = '';
-    state.goalTarget = raw;
-  } else {
-    state.goalTarget = null;
-  }
-  state.villainEnabled = !!villainCheckbox.checked;
-
+  // Einstellungen uebernimmt handleDirectionInput() selbst (applyStartSettings), damit Pfeiltaste
+  // und Wischen sie genauso beachten wie dieser Button.
   handleDirectionInput(state.dir);
 });
 restartBtn.addEventListener('click', function () {
@@ -2807,6 +2961,64 @@ restartBtn.addEventListener('click', function () {
 pauseBtn.addEventListener('click', function () {
   togglePause();
 });
+resumeBtn.addEventListener('click', function () {
+  if (state.phase === 'paused') togglePause();
+});
+
+// Verstecktes Zuruecksetzen des Highscores (Punkt 10): Titel ca. 2 s gedrueckt halten, nur auf dem
+// Startbildschirm. Bewusst ohne sichtbaren Hinweis, damit es nicht versehentlich passiert; eine
+// Sicherheitsabfrage (confirm) verhindert ein unbeabsichtigtes Loeschen. Abbruch, wenn der Finger/
+// die Maus vorher losgelassen wird, den Titel verlaesst oder sich merklich bewegt.
+const RESET_HOLD_MS = 2000;
+const RESET_HOLD_TOLERANCE_PX = 12;
+const gameTitleEl = document.getElementById('gameTitle');
+let resetHoldTimer = null;
+let resetHoldStart = null;
+
+function cancelResetHold() {
+  if (resetHoldTimer) { clearTimeout(resetHoldTimer); resetHoldTimer = null; }
+  resetHoldStart = null;
+}
+
+function resetHighscore() {
+  try {
+    window.localStorage.removeItem(HIGHSCORE_KEY);
+  } catch (e) {
+    state.storageOk = false;   // Speicher nicht nutzbar: Wert im Speicher wird trotzdem zurueckgesetzt
+  }
+  state.highscore = 0;
+  state.newRecord = false;
+  updateScore();
+  updateInfo();
+  updateButtons();
+}
+
+function askResetHighscore() {
+  resetHoldTimer = null;
+  resetHoldStart = null;
+  // Nichts zu tun ohne Highscore; und nur auf dem Startbildschirm (Phase koennte sich geaendert haben).
+  if (state.phase !== 'ready' || state.highscore <= 0) return;
+  if (window.confirm('Reset your highscore (' + state.highscore + ')?\nThis cannot be undone.')) {
+    resetHighscore();
+  }
+}
+
+gameTitleEl.addEventListener('pointerdown', function (e) {
+  if (state.phase !== 'ready') return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  cancelResetHold();
+  resetHoldStart = { x: e.clientX, y: e.clientY };
+  resetHoldTimer = setTimeout(askResetHighscore, RESET_HOLD_MS);
+});
+gameTitleEl.addEventListener('pointermove', function (e) {
+  if (!resetHoldStart) return;
+  if (Math.hypot(e.clientX - resetHoldStart.x, e.clientY - resetHoldStart.y) > RESET_HOLD_TOLERANCE_PX) cancelResetHold();
+});
+['pointerup', 'pointercancel', 'pointerleave'].forEach(function (type) {
+  gameTitleEl.addEventListener(type, cancelResetHold);
+});
+// Langes Druecken oeffnet auf manchen Geraeten (v. a. Android) das Kontextmenue - hier unerwuenscht.
+gameTitleEl.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
 // Klick/Tipp auf das Spielfeld waehrend der Schmetterling-Wartezeit (won-pending) blendet das Panel
 // sofort ein, statt die volle Sekunde abzuwarten (von Marco bestaetigt, 23.09.2026). pointerdown
