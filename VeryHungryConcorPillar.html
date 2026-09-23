@@ -71,7 +71,13 @@
     -webkit-tap-highlight-color: transparent;
   }
   .game-btn:active { filter: brightness(0.9); }
-  .mode-btn { padding: 8px 16px; font-size: 0.9rem; }
+  .mode-btn { padding: 8px 16px; font-size: 1.17rem; flex: 1 1 auto; min-width: 0; }
+  /* #startBtn statt .game-btn: ID-Selektor ueberschreibt sicher nur den Start-Button (Faktor 1.3,
+     siehe Stilprobe) - #pauseBtn (teilt sich ebenfalls .game-btn, gehoert aber zum laufenden Spiel,
+     nicht zum Endbildschirm) bleibt dadurch beim bisherigen 1rem unveraendert. #restartBtn bekommt
+     ebenfalls eine eigene ID-Regel, aber erst weiter unten beim Endbildschirm-Block (Faktor 1.3,
+     bestaetigte Stilprobe stilprobe-endbildschirme-vergroessert.html, 23.09.2026). */
+  #startBtn { font-size: 1.3rem; width: 100%; }
 
   /* Zentriertes Overlay auf dem Canvas fuer Startbildschirm (ready) und Endbildschirm (over/won).
      pointer-events:none auf dem Container, damit er ausserhalb des Panels nichts blockiert -
@@ -104,7 +110,7 @@
      Startbildschirm-Zeile im selben kleinen Stil wie #endScore; Rekord-Hinweis in Gold aus der
      bestehenden Palette (COLORS.food.cheeseHi / COLORS.morpho.gold.hi), keine neue Farbe. */
   #score .best { font-weight: 500; opacity: 0.7; }
-  #bestLine { margin: 0; font-size: 0.8rem; opacity: 0.85; text-align: center; }
+  #bestLine { margin: 0; font-size: 1.04rem; opacity: 0.85; text-align: center; }
   .recordInline { font-weight: 700; color: #ffe58f; }
 
   /* 'won'-spezifisch (bestaetigter Schmetterling-Endbildschirm, siehe
@@ -113,24 +119,94 @@
      Schmetterlings frei sichtbar bleiben (ueberdeckt wird nur der untere Fluegelbereich). Nur bei
      Phase 'won' aktiv (siehe updateButtons(): centerOverlay.classList.toggle('phase-won', ...)) -
      'ready'/'over' bleiben unveraendert mittig mit dem normalen Titel-Format. */
-  #centerOverlay.phase-won { align-items: flex-end; padding-bottom: 64px; }
+  /* Panel-Abstand vom unteren Rand 64px -> 16px reduziert UND der Schmetterling in drawButterfly()
+     um 40px nach oben verschoben (beides zusammen von Marco bestaetigt, 23.09.2026, Stilprobe
+     stilprobe-schmetterling-verzoegerung.html: "Textfeld weiter unten ... Schmetterling etwas
+     hoeher"), damit nach dem Einblenden (siehe won-pending/Verzoegerung weiter unten) mehr vom
+     Schmetterling frei bleibt statt vom Panel verdeckt zu werden. */
+  #centerOverlay.phase-won { align-items: flex-end; padding-bottom: 16px; }
   #centerOverlay.phase-won #endTitle { font-size: 28px; font-weight: 600; }
+  /* Schmetterling-Verzoegerung (von Marco bestaetigt, 23.09.2026, Stilprobe wie oben): beim Eintritt
+     in die 'won'-Phase bleibt das Panel 1 Sekunde lang unsichtbar (reines JS-Timing, siehe
+     updateButtons()/revealWonPanel() weiter unten), damit der Schmetterling zuerst frei sichtbar
+     ist, danach blendet das Panel sanft ein. opacity:0 + pointer-events:none nur while "won-pending"
+     aktiv ist, damit ein Klick/Tipp waehrend der Wartezeit durch das (unsichtbare) Panel hindurch
+     das darunterliegende Spielfeld erreicht (siehe boardWrap-Listener weiter unten, der das
+     Einblenden dann sofort auslöst).
+     WICHTIG: die transition-Regel ist bewusst von der opacity:0-Regel GETRENNT und an eine eigene
+     Klasse "won-fade-armed" gebunden statt direkt an "phase-won" - wuerde die Transition schon beim
+     erstmaligen Setzen von "won-pending" aktiv sein, wuerde der Browser auch das anfaengliche
+     Verstecken (opacity 1 -> 0 beim Sieg) ueber 0.35s aus-faden statt es sofort umzusetzen (CSS-
+     Transitions reagieren auf JEDE Wertaenderung, nicht nur auf die vom Entwickler gemeinte). Die
+     JS-Logik (siehe updateButtons()) setzt "won-pending" daher zuerst OHNE "won-fade-armed", erzwingt
+     einen Reflow, und aktiviert "won-fade-armed" erst danach - dadurch betrifft die Transition nur
+     noch den spaeteren Uebergang beim Einblenden (opacity 0 -> 1), nicht das sofortige Verstecken. */
+  #centerOverlay.phase-won.won-fade-armed .panel { transition: opacity 0.35s ease; }
+  #centerOverlay.phase-won.won-pending .panel { opacity: 0; pointer-events: none; }
+
+  /* Endbildschirm (Game Over) vergroessert (bestaetigte Stilprobe
+     stilprobe-endbildschirme-vergroessert.html, Faktor 1.3, von Marco bestaetigt 23.09.2026) - eigene
+     ID-Regeln je Element, da #endTitle/#endLine1/#endLine2/#endScore sonst nur ueber die gemeinsamen
+     Basis-Regeln oben (Zeile 103-105) liefen und #restartBtn nur ueber .game-btn. Wichtig: NUR der
+     'over'-Zweig wird vergroessert - der 'won'-Zweig (Schmetterling) bleibt bewusst beim bestaetigten
+     Original (siehe #centerOverlay.phase-won #endTitle direkt darueber, unveraendert 28px), da Marco
+     die Schmetterling-Groesse explizit so bestaetigt hat ("das originale ist gut so"). Die #endTitle-
+     Regel hier wirkt trotzdem nur auf die 'over'-Phase, weil #centerOverlay.phase-won #endTitle (zwei
+     ID-Selektoren kombiniert) hoehere Spezifitaet hat und daher fuer 'won' unabhaengig von der
+     Quellreihenfolge weiterhin gewinnt. */
+  #endTitle { font-size: 1.365rem; }
+  #endLine1, #endLine2 { font-size: 1.235rem; }
+  #endScore { font-size: 1.04rem; }
+  #restartBtn { font-size: 1.3rem; }
+
+  /* Startbildschirm horizontal (bestaetigte Stilprobe stilprobe-startbildschirm-horizontal.html,
+     Variante A, 23.09.2026): das Panel wird NUR waehrend der Ready-Phase breiter und flacher statt
+     schmal/hoch - Endbildschirm (#endControls, .game-btn fuer Retry/Pause) bleibt unveraendert.
+     Eigene Klasse "phase-ready" (gleiches Prinzip wie "phase-won" oben), damit die Breiten-/
+     Padding-Aenderung sauber auf die Ready-Phase beschraenkt bleibt und nicht ueber die gemeinsame
+     .panel-Klasse den Endbildschirm mitveraendert. Breite orientiert sich an #boardWrap
+     (min(94vw, 68vh, 560px)), auf 90% davon reduziert - identisch zur Stilprobe. */
+  #centerOverlay.phase-ready .panel {
+    width: calc(min(94vw, 68vh, 560px) * 0.9);
+    max-width: none;
+    padding: 20px 24px;
+  }
 
   /* Neu in Paket 4: Startbildschirm-Einstellungen (Modus, Zielwert, Boesewicht). Bewusst als
      eigener Block, damit er sich unabhaengig vom Endbildschirm ein-/ausblenden laesst (siehe
-     updateButtons()). */
-  #readyControls, #endControls { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-  #modeSelect { display: flex; gap: 8px; }
-  #goalInputWrap { display: flex; align-items: center; gap: 6px; font-size: 0.95rem; }
+     updateButtons()). #readyControls und #endControls sind seit der horizontalen Stilprobe (siehe
+     oben) getrennte Regeln statt einer gemeinsamen - #readyControls ist jetzt eine Zwei-Spalten-Zeile
+     (.readyLeft/.readyRight, siehe unten), #endControls bleibt unveraendert die bisherige Spalte. */
+  #endControls { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  #readyControls { display: flex; flex-direction: row; align-items: center; gap: 22px; width: 100%; }
+  /* Linke Spalte: Status ("Ready?") + Highscore-Zeile, rechtsbuendig zur Mitte hin linksbuendiger
+     Text (siehe #overlayStatus/#bestLine text-align unten). Rechte Spalte: alle Bedienelemente
+     kompakt untereinander. min-width:0 auf beiden ist der in der Stilprobe gefundene Bugfix gegen
+     das klassische Flexbox-Ueberlaufproblem (Flex-Kinder duerfen sonst nicht unter ihre
+     Inhaltsbreite schrumpfen und sprengen den Panel-Rahmen). */
+  .readyLeft { flex: 1 1 40%; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .readyRight { flex: 1 1 60%; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 9px; }
+  /* #overlayStatus bekommt eine eigene, spezifischere Regel (nach der gemeinsamen Regel mit
+     #endTitle oben) fuer Groesse/Ausrichtung, die NUR auf dem Startbildschirm gilt - #endTitle hat
+     seine eigene Vergroesserung fuer den Endbildschirm weiter oben (Faktor 1.3, siehe
+     "Endbildschirm vergroessert"-Block), bleibt von dieser Regel hier also unberuehrt. Grössenfaktor
+     Startbildschirm: von Marco bestaetigt (23.09.2026, Stilprobe Variante A) - alle Texte des Panels
+     x1.3, "Ready?" zusaetzlich x1.3 (macht in Summe x1.69 gegenueber dem urspruenglichen 1.05rem =
+     1.7745rem). */
+  #overlayStatus { font-size: 1.7745rem; text-align: left; }
+  #bestLine { text-align: left; }
+  #modeSelect { display: flex; gap: 8px; flex-wrap: wrap; }
+  #goalInputWrap { display: flex; align-items: center; gap: 6px; font-size: 1.235rem; }
   #goalInputWrap input[type="number"] {
-    width: 64px;
+    width: 68px;
+    min-width: 0;
     padding: 6px 8px;
     border-radius: 8px;
     border: none;
     font: inherit;
   }
-  #goalError { margin: 0; font-size: 0.8rem; color: #ffb4b4; min-height: 1em; text-align: center; }
-  #villainLabel { display: flex; align-items: center; gap: 6px; font-size: 0.95rem; cursor: pointer; }
+  #goalError { margin: 0; font-size: 1.04rem; color: #ffb4b4; min-height: 1em; text-align: left; }
+  #villainLabel { display: flex; align-items: center; gap: 6px; font-size: 1.235rem; cursor: pointer; }
 
   /* Fester Platz unter dem Feld fuer den Pause/Weiter-Button, damit nichts springt,
      wenn er ein-/ausgeblendet wird. */
@@ -150,19 +226,23 @@
     <div id="centerOverlay">
       <div class="panel">
         <div id="readyControls">
-          <p id="overlayStatus"></p>
-          <p id="bestLine"></p>
-          <div id="modeSelect">
-            <button type="button" id="modeEndlessBtn" class="game-btn mode-btn">Endless</button>
-            <button type="button" id="modeGoalBtn" class="game-btn mode-btn">Goal</button>
+          <div class="readyLeft">
+            <p id="overlayStatus"></p>
+            <p id="bestLine"></p>
           </div>
-          <div id="goalInputWrap">
-            <label for="goalInput">Target:</label>
-            <input type="number" id="goalInput" min="1" max="200" step="1" value="50">
+          <div class="readyRight">
+            <div id="modeSelect">
+              <button type="button" id="modeEndlessBtn" class="game-btn mode-btn">Endless</button>
+              <button type="button" id="modeGoalBtn" class="game-btn mode-btn">Goal</button>
+            </div>
+            <div id="goalInputWrap">
+              <label for="goalInput">Target:</label>
+              <input type="number" id="goalInput" min="1" max="200" step="1" value="50">
+            </div>
+            <p id="goalError"></p>
+            <label id="villainLabel"><input type="checkbox" id="villainCheckbox"> Villain</label>
+            <button id="startBtn" class="game-btn" type="button">Start</button>
           </div>
-          <p id="goalError"></p>
-          <label id="villainLabel"><input type="checkbox" id="villainCheckbox"> Villain</label>
-          <button id="startBtn" class="game-btn" type="button">Start</button>
         </div>
         <div id="endControls">
           <p id="endTitle"></p>
@@ -254,6 +334,33 @@ const SNAKE_RADIUS_FACTOR = 0.56;
 // den Futter-Icons ist die sichtbare Figur bewusst groesser als ihr Kollisionsfeld.
 const VILLAIN_RADIUS_FACTOR = 0.75;
 
+// Verpuppungs-Sequenz nach dem Ziel-Bissen (bestaetigte Stilprobe stilprobe-verpuppung.html,
+// 23.09.2026, Gesamtdauer ~2,6 s): Raupe steht kurz still, wird weiss, verpuppt sich, danach
+// verpufft ein evtl. vorhandener Boesewicht (die Ruhe-Zeit danach lassen den fertigen Kokon kurz
+// wirken, bevor der Schmetterling erscheint). Alle Zeiten in Millisekunden ab dem Biss; die
+// *_START-Werte sind daraus abgeleitet, damit sich eine einzelne Dauer aendern laesst, ohne die
+// anderen von Hand nachzuziehen. Richtwerte, noch nicht auf dem Handy geprueft.
+const COCOON_STAND_MS = 300;    // 1) Raupe bleibt stehen
+const COCOON_WHITE_MS = 600;    // 2) Raupe blendet zu Weiss
+const COCOON_WRAP_MS = 1200;    // 3) Verpuppen (Kokon waechst von der Schwanzspitze zum Kopf)
+const COCOON_PUFF_MS = 400;     // 4) Boesewicht verpufft (Ausblenden + Rauchwoelkchen)
+const COCOON_REST_MS = 500;     // Ruhe ab Puff-Beginn, danach Schmetterling
+const COCOON_WHITE_START = COCOON_STAND_MS;
+const COCOON_WRAP_START = COCOON_WHITE_START + COCOON_WHITE_MS;
+const COCOON_PUFF_START = COCOON_WRAP_START + COCOON_WRAP_MS;
+const COCOON_TOTAL_MS = COCOON_PUFF_START + COCOON_REST_MS;
+// Groesste Zeit, die ein einzelner Frame zur Sequenz beitragen darf (siehe cocoonFrame()).
+const COCOON_MAX_FRAME_MS = 100;
+// Maximaler Kokon-Radius (Raupenglied: SNAKE_RADIUS_FACTOR = 0.56) - etwas dicker, damit er wie
+// eine Huelle um die Raupe wirkt - und Abtastabstand entlang des Weges in Pixeln.
+const COCOON_RADIUS = CELL * 0.62;
+const COCOON_STEP_PX = 2;
+// Obergrenze fuer die Anzahl der Abtastpunkte (= Kreise pro Fuellung) des Kokons. Bei sehr langen
+// Raupen (Ziel bis 200 -> ~205 Glieder ~ 4900 px Weg) wuerde der feste 2-px-Abstand ueber 2400 Kreise
+// pro Fuellung und Frame bedeuten; der Abstand waechst dann (max. ~5 px bei 200er-Ziel), bei dem
+// sich die Kreisbogen-Zacken am Rand mit Radius ~15 px noch unter 0.4 px halten.
+const COCOON_MAX_SAMPLES = 1000;
+
 // Farbpalette: Board-Hintergrund unveraendert, Raupen-Farben aus der von Marco bestaetigten
 // Stilprobe uebernommen (siehe stilprobe-raupe-bestaetigt.md) - ersetzt die bisherigen
 // Platzhalter-Flaechenfarben (bodyA/bodyB/head als einzelne Hex-Werte) durch Farbverlaufs-Objekte
@@ -303,6 +410,16 @@ const COLORS = {
     dotFill: '#eefffd',
     mouth: '#e6392f'
   },
+  // Verpuppungs-Sequenz nach dem Ziel-Bissen (bestaetigte Stilprobe stilprobe-verpuppung.html,
+  // 23.09.2026): white/whiteOutline = Zielpalette, in die die Raupe sanft ueberblendet wird
+  // (hi/base/lo wie bei allen Verlaufsfarben); cocoon = Seidenkokon (Verlauf, Kontur, Wickelbaender);
+  // puff = Rauchwoelkchen + Funken, wenn der Boesewicht verpufft (fill/stroke im Violett des
+  // Boesewicht-Koerpers, spark/sparkOutline im Gold von COLORS.morpho.gold - keine neuen Farbtoene
+  // ausserhalb der bestehenden Palette).
+  white: { hi: '#ffffff', base: '#f6f3ea', lo: '#d6d1c0' },
+  whiteOutline: '#7d8574',
+  cocoon: { hi: '#ffffff', base: '#f5f0e2', lo: '#cbc1a6', outline: '#7d745e', band: '#a89c80' },
+  puff: { fill: '#efe6fa', stroke: '#7c3fb0', spark: '#ffe58f', sparkOutline: '#c98f45' },
   villain: {
     body: { hi: '#c9a6ff', base: '#7c3fb0', lo: '#43195e' },
     outline: '#2a1033',
@@ -652,7 +769,8 @@ const state = {
   nextDir: { x: 1, y: 0 },     // durch Tastendruck/Wisch vorgemerkte Richtung, wird zu Beginn des nächsten Tick übernommen
   tick: 0,                     // Anzahl bisheriger Spielschritte
   score: 0,                    // Anzahl gefressenes Futter
-  phase: 'ready',              // 'ready' | 'running' | 'paused' | 'over' | 'won'
+  phase: 'ready',              // 'ready' | 'running' | 'paused' | 'over' | 'cocoon' | 'won'
+                                // ('cocoon' = Verpuppungs-Sequenz zwischen Ziel-Bissen und 'won', siehe winGame())
   food: null,                  // { x, y, type } - type ist der Index in FOOD
   tickMs: START_TICK_MS,       // aktuelle Geschwindigkeit (sinkt mit dem Score bis MIN_TICK_MS)
   mode: 'endless',              // 'endless' | 'goal' - auf dem Startbildschirm gewaehlt
@@ -664,7 +782,8 @@ const state = {
                                  // bestimmt den Text auf dem Endbildschirm (siehe updateButtons())
   highscore: 0,                 // bester Score VOR der laufenden Runde (aus localStorage geladen)
   newRecord: false,             // true, wenn die gerade beendete Runde den Highscore geschlagen hat
-  storageOk: true               // false, wenn localStorage auf diesem Geraet/Browser nicht nutzbar ist
+  storageOk: true,              // false, wenn localStorage auf diesem Geraet/Browser nicht nutzbar ist
+  cocoon: null                  // waehrend der 'cocoon'-Phase { geo, t, last, rafId }, sonst null (siehe startCocoon())
 };
 
 // ---------------------------------------------------------------
@@ -674,6 +793,7 @@ const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const infoEl = document.getElementById('info');
 const scoreEl = document.getElementById('score');
+const boardWrap = document.getElementById('boardWrap');
 const centerOverlay = document.getElementById('centerOverlay');
 const readyControls = document.getElementById('readyControls');
 const endControls = document.getElementById('endControls');
@@ -713,7 +833,7 @@ function isOpposite(a, b) {
 // eine bereits vorgemerkte state.nextDir - so kann ein zweiter, schneller Steuerbefehl vor dem
 // nächsten Tick keine Wende "durchschmuggeln", die in der Summe 180 Grad ergibt.
 function handleDirectionInput(dir) {
-  if (state.phase === 'over' || state.phase === 'won' || state.phase === 'paused') return;
+  if (state.phase === 'over' || state.phase === 'won' || state.phase === 'paused' || state.phase === 'cocoon') return;
   if (isOpposite(dir, state.dir)) return;
   state.nextDir = dir;
   if (state.phase === 'ready') {
@@ -753,10 +873,74 @@ function gameOver(reason) {
 
 // Neu in Paket 4: Ziel-Modus erfolgreich beendet (Zielwert erreicht). Eigener Endzustand statt
 // gameOver(), da es kein Verlieren ist - eigener Text/Button-Beschriftung in updateButtons().
+//
+// Neu (23.09.2026, bestaetigte Stilprobe stilprobe-verpuppung.html): der Wechsel in 'won' erfolgt
+// nicht mehr sofort, sondern ueber die Zwischenphase 'cocoon' (Raupe bleibt stehen, wird weiss,
+// verpuppt sich, ein Boesewicht verpufft) - erst danach, in finishCocoon(), beginnt wie bisher der
+// Schmetterling-Bildschirm. Der Highscore wird trotzdem schon HIER geschrieben (der Score steht ab
+// dem Biss fest) - so geht ein Rekord auch nicht verloren, wenn der Tab waehrend der ~2,6 s
+// langen Sequenz geschlossen wird. state.food wird geleert, weil die Zielfrucht gegessen ist und
+// sonst unter dem Kokon weiter gezeichnet wuerde.
 function winGame() {
-  state.phase = 'won';
+  state.phase = 'cocoon';
   commitHighscore();
+  state.food = null;
   stopLoop();
+  startCocoon();
+}
+
+// ---------------------------------------------------------------
+// 4c) Verpuppungs-Sequenz ('cocoon'-Phase)
+// ---------------------------------------------------------------
+// Laeuft NICHT ueber den Tick-Loop (der ist mit stopLoop() beendet und arbeitet in Feld-Schritten),
+// sondern ueber requestAnimationFrame: die Sequenz ist eine reine Animation, und ihr Aussehen ist
+// eine Funktion der verstrichenen Zeit state.cocoon.t (siehe draw()/cocoonDrawables()). Die Zeit wird
+// pro Frame um hoechstens COCOON_MAX_FRAME_MS erhoeht, damit die Sequenz waehrend eines
+// Hintergrund-Tabs (rAF pausiert dort) nicht "durchspringt", sondern beim Zurueckkommen dort
+// weiterlaeuft, wo sie stand.
+function startCocoon() {
+  cancelCocoon();
+  state.cocoon = {
+    geo: buildCocoonGeometry(state.snake, state.dir),
+    t: 0,
+    last: performance.now(),
+    rafId: null
+  };
+  state.cocoon.rafId = requestAnimationFrame(cocoonFrame);
+}
+
+function cancelCocoon() {
+  if (state.cocoon && state.cocoon.rafId !== null) cancelAnimationFrame(state.cocoon.rafId);
+  state.cocoon = null;
+}
+
+function cocoonFrame(now) {
+  const c = state.cocoon;
+  if (!c || state.phase !== 'cocoon') return;
+  c.rafId = null;
+  c.t += Math.min(Math.max(now - c.last, 0), COCOON_MAX_FRAME_MS);
+  c.last = now;
+  if (c.t >= COCOON_TOTAL_MS) {
+    finishCocoon();
+    return;
+  }
+  draw();
+  c.rafId = requestAnimationFrame(cocoonFrame);
+}
+
+// Ende der Sequenz (regulaer nach COCOON_TOTAL_MS oder vorzeitig per Klick/Tipp, siehe
+// boardWrap-Listener in Abschnitt 7): Boesewicht ist jetzt endgueltig weg, dann der bisherige
+// Schmetterling-Uebergang. draw() VOR updateButtons(), damit der Schmetterling schon auf dem Canvas
+// steht, wenn das Panel (mit 1s Verzoegerung, siehe won-pending) erscheint. Mehrfacher Aufruf ist
+// unschaedlich (Phasenpruefung), z. B. wenn der Klick genau mit dem letzten Frame zusammenfaellt.
+function finishCocoon() {
+  if (state.phase !== 'cocoon') return;
+  cancelCocoon();
+  state.villain = null;
+  state.phase = 'won';
+  draw();
+  updateInfo();
+  updateButtons();
 }
 
 // ---------------------------------------------------------------
@@ -1596,7 +1780,9 @@ const meadowCache = buildMeadowCache();
 // Kugel - schliesst die Luecke zwischen zwei benachbarten Kreisen. Haengt nur von der Lage der
 // Nachbar-Segmente in "path" ab, nicht von der aktuellen Blickrichtung - funktioniert dadurch
 // unveraendert bei jeder Kurve, die die Raupe waehrend des Spiels nimmt.
-function drawSegmentSpike(path, i, radiusFactor, fillColor) {
+// "strokeColor" (optional, neu): Konturfarbe - wird nur von der Verpuppungs-Sequenz uebergeben
+// (Kontur blendet dort mit zu Weiss); ohne Angabe gilt wie bisher Rot fuer den Kopf, sonst Gruen.
+function drawSegmentSpike(path, i, radiusFactor, fillColor, strokeColor) {
   const cur = path[i];
   const isLast = i === path.length - 1;
   const ref = isLast ? path[i - 1] : path[i + 1];
@@ -1620,7 +1806,7 @@ function drawSegmentSpike(path, i, radiusFactor, fillColor) {
   ctx.fillStyle = fillColor;
   ctx.fill();
   ctx.lineWidth = 1.3;
-  ctx.strokeStyle = i === 0 ? COLORS.redOutline : COLORS.outline;
+  ctx.strokeStyle = strokeColor || (i === 0 ? COLORS.redOutline : COLORS.outline);
   ctx.stroke();
 }
 
@@ -1629,7 +1815,9 @@ function drawSegmentSpike(path, i, radiusFactor, fillColor) {
 // Unterschied zur Stilprobe (dort war die Raupe immer nach rechts ausgerichtet) muss hier jede
 // Position ueber "dir" UND die dazu senkrechte Achse (px, py) berechnet werden, weil die Raupe im
 // echten Spiel in alle vier Richtungen unterwegs sein kann.
-function drawAntenna(hx, hy, r, side, dir) {
+// "white" (optional, neu, 0..1): Grad der Ueberblendung der Fuehler-Spitze zu Weiss waehrend der
+// Verpuppungs-Sequenz; undefined/0 = unveraendertes Aussehen.
+function drawAntenna(hx, hy, r, side, dir, white) {
   const px = -dir.y, py = dir.x;
   const baseX = hx - dir.x * r * 0.05 + px * side * r * 0.65;
   const baseY = hy - dir.y * r * 0.05 + py * side * r * 0.65;
@@ -1654,8 +1842,8 @@ function drawAntenna(hx, hy, r, side, dir) {
   ctx.stroke();
 
   const tipR = r * 0.14;
-  ctx.fillStyle = bodyFill(tipX, tipY, tipR, COLORS.antenna.tip);
-  ctx.strokeStyle = COLORS.redOutline;
+  ctx.fillStyle = bodyFill(tipX, tipY, tipR, mixPalette(COLORS.antenna.tip, COLORS.white, white));
+  ctx.strokeStyle = white > 0 ? mixHex(COLORS.redOutline, COLORS.whiteOutline, white) : COLORS.redOutline;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.arc(tipX, tipY, tipR, 0, Math.PI * 2);
@@ -1728,7 +1916,9 @@ function drawMouth(hx, hy, r, dir) {
 // einzelne, in sich abgeschlossene Funktion (statt wie frueher zwei separate Durchgaenge über alle
 // Glieder) - siehe draw()/drawSnakeSegment weiter unten: nur so lassen sich Futter und Boesewicht
 // zeilenweise dazwischen einsortieren (raeumliches "weiter unten = weiter vorne"-Gefuehl).
-function drawSnakeSegment(i) {
+// "white" (optional, neu, 0..1): Grad der Ueberblendung von Koerper/Kontur/Fuehler-Spitzen zu Weiss
+// (Verpuppungs-Sequenz); undefined/0 = unveraendertes Aussehen (alle normalen Aufrufe aus draw()).
+function drawSnakeSegment(i, white) {
   const path = state.snake;
   const d = state.dir;
   const s = path[i];
@@ -1744,14 +1934,17 @@ function drawSnakeSegment(i) {
 
   // Dreieck-Verbindungsstueck zum Nachbarglied, dann die Kugel selbst darueber (Farbverlauf via
   // bodyFill), dann ein kleiner Glanzpunkt.
-  const col = i === 0 ? COLORS.head : COLORS.bands[i % 2];
-  drawSegmentSpike(path, i, SNAKE_RADIUS_FACTOR, col.base);
+  const col = mixPalette(i === 0 ? COLORS.head : COLORS.bands[i % 2], COLORS.white, white);
+  const outline = white > 0
+    ? mixHex(i === 0 ? COLORS.redOutline : COLORS.outline, COLORS.whiteOutline, white)
+    : (i === 0 ? COLORS.redOutline : COLORS.outline);
+  drawSegmentSpike(path, i, SNAKE_RADIUS_FACTOR, col.base, outline);
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fillStyle = bodyFill(cx, cy, r, col);
   ctx.fill();
   ctx.lineWidth = 1.3;
-  ctx.strokeStyle = i === 0 ? COLORS.redOutline : COLORS.outline;
+  ctx.strokeStyle = outline;
   ctx.stroke();
   ctx.fillStyle = COLORS.dot;
   ctx.beginPath();
@@ -1762,8 +1955,8 @@ function drawSnakeSegment(i) {
 
   // Kopf-Verzierungen (nur beim Kopf, i===0): Fuehler zuerst (hinter den Augen), dann Baeckchen,
   // dann Augen mit Wimpern-Linie, dann Mund.
-  drawAntenna(cx, cy, r, -1, d);
-  drawAntenna(cx, cy, r, 1, d);
+  drawAntenna(cx, cy, r, -1, d, white);
+  drawAntenna(cx, cy, r, 1, d, white);
   drawCheeks(cx, cy, r, d);
 
   // Augen: weisser Kreis + Pupille, dazu eine feine schwarze Wimpern-Linie auf der Haelfte des
@@ -1800,6 +1993,265 @@ function drawSnakeSegment(i) {
 }
 
 // ---------------------------------------------------------------
+// 5e) Verpuppungs-Sequenz zeichnen (Kokon, Weiss-Ueberblendung, Boesewicht verpufft)
+// ---------------------------------------------------------------
+// Geometrie/Look 1:1 aus der von Marco bestaetigten Stilprobe stilprobe-verpuppung.html
+// ("Das ist gut, bitte implementieren", 23.09.2026). Alle Funktionen hier sind reine Zeichen- bzw.
+// Rechenfunktionen: der Zeitablauf kommt ausschliesslich aus state.cocoon.t (siehe cocoonDrawables()).
+
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function smooth01(x) { x = clamp01(x); return x * x * (3 - 2 * x); }
+function easeInOut(x) { x = clamp01(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+function easeOut(x) { x = clamp01(x); return 1 - Math.pow(1 - x, 3); }
+
+// Mischt zwei #rrggbb-Farben (t = 0 -> a, t = 1 -> b), liefert einen rgb()-String
+function mixHex(a, b, t) {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const ar = pa >> 16, ag = (pa >> 8) & 255, ab = pa & 255;
+  const br = pb >> 16, bg = (pb >> 8) & 255, bb = pb & 255;
+  return 'rgb(' + Math.round(ar + (br - ar) * t) + ',' + Math.round(ag + (bg - ag) * t) + ',' + Math.round(ab + (bb - ab) * t) + ')';
+}
+// Mischt eine {hi, base, lo}-Palette Richtung "target". t undefined/0 -> Original unveraendert
+// (deshalb "!(t > 0)" statt "t <= 0": faengt auch undefined ab, das die normalen Aufrufe uebergeben).
+function mixPalette(col, target, t) {
+  if (!(t > 0)) return col;
+  return { hi: mixHex(col.hi, target.hi, t), base: mixHex(col.base, target.base, t), lo: mixHex(col.lo, target.lo, t) };
+}
+
+// Ecken abrunden (Chaikin-Verfahren, Endpunkte bleiben fix)
+function chaikin(poly) {
+  const out = [poly[0]];
+  for (let i = 0; i < poly.length - 1; i++) {
+    const a = poly[i], b = poly[i + 1];
+    out.push({ x: 0.75 * a.x + 0.25 * b.x, y: 0.75 * a.y + 0.25 * b.y });
+    out.push({ x: 0.25 * a.x + 0.75 * b.x, y: 0.25 * a.y + 0.75 * b.y });
+  }
+  out.push(poly[poly.length - 1]);
+  return out;
+}
+
+// Gleichmaessig abgetasteter Weg mit Tangenten
+function resamplePath(poly, step) {
+  const cum = [0];
+  for (let i = 1; i < poly.length; i++) {
+    cum.push(cum[i - 1] + Math.hypot(poly[i].x - poly[i - 1].x, poly[i].y - poly[i - 1].y));
+  }
+  const L = cum[cum.length - 1];
+  const count = Math.max(1, Math.ceil(L / step));
+  const out = [];
+  let seg = 1;
+  for (let k = 0; k <= count; k++) {
+    const s = Math.min(L, k * L / count);
+    while (seg < poly.length - 1 && cum[seg] < s) seg++;
+    const a = poly[seg - 1], b = poly[seg];
+    const segLen = (cum[seg] - cum[seg - 1]) || 1;
+    const f = (s - cum[seg - 1]) / segLen;
+    let tx = b.x - a.x, ty = b.y - a.y;
+    const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+    out.push({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, tx: tx, ty: ty, s: s });
+  }
+  return { samples: out, L: L };
+}
+
+// cells: Kopf zuerst (= state.snake), dir: Blickrichtung des Kopfes. Der Weg laeuft Schwanz -> Kopf
+// und ragt vorne 0.35 / hinten 0.25 Zellen ueber die Gliedmittelpunkte hinaus (der Kokon umschliesst
+// Kopf und Schwanzspitze komplett). Wird EINMAL beim Start der Sequenz berechnet (die Raupe steht
+// ja still) und dann pro Frame nur noch gezeichnet.
+function buildCocoonGeometry(cells, dir) {
+  const n = cells.length;
+  const pts = [];
+  for (let i = n - 1; i >= 0; i--) pts.push({ x: cells[i].x * CELL + CELL / 2, y: cells[i].y * CELL + CELL / 2 });
+  // Verlaengerung hinter dem Schwanz: Richtung Schwanz-Ende (bei n === 1 gaebe es keine Richtung ->
+  // Blickrichtung als Ersatz; die Raupe hat im Spiel immer mindestens 5 Glieder, das ist nur Absicherung)
+  let tx, ty;
+  if (n > 1) { tx = pts[0].x - pts[1].x; ty = pts[0].y - pts[1].y; } else { tx = -dir.x; ty = -dir.y; }
+  const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+  pts.unshift({ x: pts[0].x + tx * CELL * 0.25, y: pts[0].y + ty * CELL * 0.25 });
+  const last = pts[pts.length - 1];
+  pts.push({ x: last.x + dir.x * CELL * 0.35, y: last.y + dir.y * CELL * 0.35 });
+  const rawTotal = CELL * 0.25 + (n - 1) * CELL + CELL * 0.35;
+
+  let poly = pts;
+  for (let k = 0; k < 3; k++) poly = chaikin(poly);
+  const rs = resamplePath(poly, Math.max(COCOON_STEP_PX, rawTotal / COCOON_MAX_SAMPLES));
+
+  let maxRow = 0;
+  for (const c of cells) maxRow = Math.max(maxRow, c.y);
+  return { samples: rs.samples, L: rs.L, step: rs.L / (rs.samples.length - 1 || 1), rawTotal: rawTotal, maxRow: maxRow, n: n };
+}
+
+// Position (px entlang des Kokon-Wegs) eines Raupenglieds i
+function cocoonSegmentS(cc, i) {
+  return ((CELL * 0.25 + (cc.n - 1 - i) * CELL) / cc.rawTotal) * cc.L;
+}
+
+// Halbkugel-Kappe: d = Abstand zum Ende; ergibt 0..1
+function cocoonDome(d) {
+  if (d >= COCOON_RADIUS) return 1;
+  if (d <= 0) return 0;
+  const q = (COCOON_RADIUS - d) / COCOON_RADIUS;
+  return Math.sqrt(1 - q * q);
+}
+
+function cocoonCirclesPath(items, k, add, ox, oy) {
+  const p = new Path2D();
+  for (const c of items) {
+    const rr = c.r * k + add;
+    if (c.r < 0.4 || rr < 0.3) continue;
+    const x = c.x + ox * c.r, y = c.y + oy * c.r;
+    p.moveTo(x + rr, y);
+    p.arc(x, y, rr, 0, Math.PI * 2);
+  }
+  return p;
+}
+
+// p = 0..1: Fortschritt des Einspinnens (von der Schwanzspitze zum Kopf)
+function drawCocoon(cc, p) {
+  const sMax = p * cc.L;
+  if (sMax < 0.5) return;
+  const items = [];
+  for (const sm of cc.samples) {
+    if (sm.s > sMax) break;
+    const t = sm.s / cc.L;
+    const prof = 0.72 + 0.28 * Math.pow(Math.sin(Math.PI * clamp01(t)), 0.6);
+    const r = COCOON_RADIUS * prof * cocoonDome(sm.s) * cocoonDome(sMax - sm.s);
+    items.push({ x: sm.x, y: sm.y, tx: sm.tx, ty: sm.ty, s: sm.s, r: r });
+  }
+  if (!items.length) return;
+
+  ctx.save();
+  // Schatten (eine einzige Flaeche, damit sich die halbtransparenten Kreise nicht aufaddieren)
+  ctx.fillStyle = COLORS.shadow;
+  ctx.fill(cocoonCirclesPath(items, 0.95, 0, 0.06, 0.62));
+  // Kontur, dunkler Rand, Grundflaeche, Glanzstreifen (Kugel-Wirkung wie bei den Raupengliedern)
+  ctx.fillStyle = COLORS.cocoon.outline;
+  ctx.fill(cocoonCirclesPath(items, 1, 1.6, 0, 0));
+  ctx.fillStyle = COLORS.cocoon.lo;
+  ctx.fill(cocoonCirclesPath(items, 1, 0, 0, 0));
+  ctx.fillStyle = COLORS.cocoon.base;
+  ctx.fill(cocoonCirclesPath(items, 0.9, 0, -0.03, -0.10));
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = COLORS.cocoon.hi;
+  ctx.fill(cocoonCirclesPath(items, 0.4, 0, -0.2, -0.4));
+  ctx.globalAlpha = 1;
+
+  // Seiden-Wickelbaender: leicht schraeg quer zum Weg, nur dort, wo der Kokon schon voll dick ist
+  const bandGap = 11;
+  ctx.lineCap = 'round';
+  for (let sb = 8; sb < sMax; sb += bandGap) {
+    const k = Math.round(sb / cc.step);   // tatsaechlicher Abtastabstand (bei langen Raupen > COCOON_STEP_PX)
+    const it = items[Math.min(k, items.length - 1)];
+    if (!it || it.r < COCOON_RADIUS * 0.45) continue;
+    const nx = -it.ty, ny = it.tx;
+    const half = it.r * 0.9;
+    const ax = it.x - nx * half - it.tx * half * 0.3, ay = it.y - ny * half - it.ty * half * 0.3;
+    const bx = it.x + nx * half + it.tx * half * 0.3, by = it.y + ny * half + it.ty * half * 0.3;
+    const cx = it.x + it.tx * half * 0.35, cy = it.y + it.ty * half * 0.35;
+    ctx.strokeStyle = COLORS.cocoon.band;
+    ctx.globalAlpha = 0.7;
+    ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(cx, cy, bx, by); ctx.stroke();
+    ctx.strokeStyle = '#ffffff';
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(ax + it.tx * 1.4, ay + it.ty * 1.4); ctx.quadraticCurveTo(cx + it.tx * 1.4, cy + it.ty * 1.4, bx + it.tx * 1.4, by + it.ty * 1.4); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// Boesewicht verpufft: u = 0..1 ueber COCOON_PUFF_MS. Erst Ausblenden + leichtes Schrumpfen ...
+function drawVillainFading(u) {
+  const v = state.villain;
+  const k = clamp01(u / 0.55);
+  const cx = v.x * CELL + CELL / 2, cy = v.y * CELL + CELL / 2;
+  ctx.save();
+  ctx.globalAlpha = 1 - k;
+  ctx.translate(cx, cy);
+  ctx.scale(1 - 0.35 * k, 1 - 0.35 * k);
+  ctx.translate(-cx, -cy);
+  drawVillain();
+  ctx.restore();
+}
+
+function puffStarPath(cx, cy, rOuter) {
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+    const r = i % 2 === 0 ? rOuter : rOuter * 0.38;
+    const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
+// ... dazu eine kleine Rauchwolke mit Funken (liegt ueber allem, wird nach den Drawables gezeichnet)
+function drawPuff(u) {
+  const v = state.villain;
+  const cx = v.x * CELL + CELL / 2, cy = v.y * CELL + CELL / 2;
+  const e = easeOut(u);
+  const alpha = 0.92 * Math.pow(1 - u, 1.3);
+  ctx.save();
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = COLORS.puff.stroke;
+  ctx.fillStyle = COLORS.puff.fill;
+  ctx.globalAlpha = alpha;
+  for (let k = 0; k < 7; k++) {
+    const a = (k / 7) * Math.PI * 2 + 0.4;
+    const dist = CELL * (0.15 + 1.0 * e);
+    const rr = CELL * (0.32 + 0.42 * u) * (0.85 + 0.3 * (((k * 37) % 10) / 10));
+    ctx.beginPath();
+    ctx.arc(cx + Math.cos(a) * dist, cy + Math.sin(a) * dist * 0.85, rr, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.arc(cx, cy, CELL * (0.5 + 0.7 * u), 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+  ctx.globalAlpha = clamp01(1 - u * 1.1);
+  ctx.fillStyle = COLORS.puff.spark;
+  ctx.strokeStyle = COLORS.puff.sparkOutline;
+  for (let k = 0; k < 5; k++) {
+    const a = (k / 5) * Math.PI * 2 + 0.9;
+    const d = CELL * (0.5 + 1.4 * e);
+    puffStarPath(cx + Math.cos(a) * d, cy + Math.sin(a) * d, CELL * 0.17 * (1 - u * 0.5));
+    ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Liefert die y-sortierbaren Zeichenobjekte der Sequenz fuer den aktuellen Zeitpunkt state.cocoon.t
+// (Aufbau wie in der Stilprobe-Funktion render()). Reihenfolge der Einfuegung wie in draw(): Boesewicht
+// zuerst, dann die Raupenglieder vom Schwanz zum Kopf, zuletzt der Kokon (bei Gleichstand obenauf).
+// Rueckgabe: { items, puffU } - puffU > 0 && < 1 heisst: Rauchwolke nach den Drawables zeichnen.
+function cocoonDrawables() {
+  const c = state.cocoon;
+  const t = c.t;
+  const cc = c.geo;
+  const white = easeInOut((t - COCOON_WHITE_START) / COCOON_WHITE_MS);
+  const p = easeInOut((t - COCOON_WRAP_START) / COCOON_WRAP_MS);
+  const puffU = clamp01((t - COCOON_PUFF_START) / COCOON_PUFF_MS);
+  // Die Segment-Ausblendung laeuft etwas ueber die Kokon-Spitze hinaus, damit auch der Kopf sicher
+  // komplett verschwunden ist, wenn der Kokon geschlossen ist.
+  const sFront = p * (cc.L + 1.5 * COCOON_RADIUS);
+
+  const items = [];
+  if (state.villain && t < COCOON_PUFF_START + COCOON_PUFF_MS) {
+    items.push({ y: state.villain.y, draw: function () { drawVillainFading(puffU); } });
+  }
+  for (let i = state.snake.length - 1; i >= 0; i--) {
+    const alpha = 1 - smooth01((sFront - cocoonSegmentS(cc, i)) / (1.2 * COCOON_RADIUS));
+    if (alpha < 0.01) continue;
+    items.push({ y: state.snake[i].y, draw: function () {
+      ctx.globalAlpha = alpha;
+      drawSnakeSegment(i, white);
+      ctx.globalAlpha = 1;
+    } });
+  }
+  if (p > 0) items.push({ y: cc.maxRow + 0.5, draw: function () { drawCocoon(cc, p); } });
+  return { items: items, puffU: puffU };
+}
+
+// ---------------------------------------------------------------
 // 5d) Schmetterling ('won'-Endbildschirm, Ziel-Modus erreicht)
 // ---------------------------------------------------------------
 // Geometrie 1:1 aus der von Marco bestaetigten Stilprobe uebernommen (stilprobe-schmetterling-canvas.html,
@@ -1823,7 +2275,11 @@ function drawButterfly() {
   const cxSrc = SRC.x + SRC.w / 2;
   const cySrc = SRC.y + SRC.h / 2;
   const offsetX = BOARD_PX / 2 - cxSrc * scale;
-  const offsetY = BOARD_PX / 2 - cySrc * scale;
+  // Um 40px nach oben verschoben (von Marco bestaetigt, 23.09.2026, Stilprobe
+  // stilprobe-schmetterling-verzoegerung.html: "Schmetterling etwas hoeher"), damit nach dem
+  // Einblenden des Panels (16px Abstand vom unteren Rand statt vorher 64px, siehe CSS oben) mehr
+  // vom Schmetterling frei bleibt statt vom Panel verdeckt zu werden.
+  const offsetY = BOARD_PX / 2 - cySrc * scale - 40;
 
   ctx.save();
   ctx.translate(offsetX, offsetY);
@@ -2029,18 +2485,31 @@ function draw() {
     CANVAS_MARGIN + BOARD_PX - mo, 0, CANVAS_MARGIN + mo, CANVAS_PX,
     BOARD_PX - mo, -CANVAS_MARGIN, CANVAS_MARGIN + mo, CANVAS_PX);
 
-  const drawables = [];
-  if (state.villainEnabled && state.villain) {
-    drawables.push({ y: state.villain.y, draw: drawVillain });
-  }
-  if (state.food) {
-    drawables.push({ y: state.food.y, draw: drawFood });
-  }
-  for (let i = state.snake.length - 1; i >= 0; i--) {
-    drawables.push({ y: state.snake[i].y, draw: drawSnakeSegment.bind(null, i) });
+  let drawables = [];
+  let puffU = 0;
+  if (state.phase === 'cocoon' && state.cocoon) {
+    // Verpuppungs-Sequenz: Raupe/Kokon/verpuffender Boesewicht je nach Zeit state.cocoon.t (5e)
+    const seq = cocoonDrawables();
+    drawables = seq.items;
+    puffU = seq.puffU;
+  } else if (state.phase !== 'won') {
+    // In 'won' (Schmetterling) wird nichts mehr vom Spielfeld gezeichnet: Raupe ist verpuppt, Futter
+    // und Boesewicht sind weg - frueher schaute die Raupe an den Fluegel-Luecken unter dem
+    // Schmetterling hervor, jetzt waere das wieder die (laengst verpuppte) Raupe.
+    if (state.villainEnabled && state.villain) {
+      drawables.push({ y: state.villain.y, draw: drawVillain });
+    }
+    if (state.food) {
+      drawables.push({ y: state.food.y, draw: drawFood });
+    }
+    for (let i = state.snake.length - 1; i >= 0; i--) {
+      drawables.push({ y: state.snake[i].y, draw: drawSnakeSegment.bind(null, i) });
+    }
   }
   drawables.sort(function (a, b) { return a.y - b.y; });
   for (const item of drawables) item.draw();
+  // Rauchwolke des verpuffenden Boesewichts liegt ueber allem (auch ueber dem Kokon)
+  if (puffU > 0 && puffU < 1 && state.villain) drawPuff(puffU);
 
   drawOverlay();
   ctx.restore();
@@ -2063,6 +2532,22 @@ function draw() {
 let loopActive = false;
 let timeoutId = null;
 let expectedTickTime = 0;   // Zeitpunkt (performance.now()), zu dem der naechste Tick faellig ist
+
+// Schmetterling-Verzoegerung (von Marco bestaetigt, 23.09.2026, siehe Stilprobe
+// stilprobe-schmetterling-verzoegerung.html): haelt den Timer fest, der das Panel nach
+// WON_REVEAL_DELAY_MS automatisch einblendet (siehe updateButtons()/revealWonPanel() weiter unten).
+let wonRevealTimer = null;
+const WON_REVEAL_DELAY_MS = 1000;
+
+// Blendet das Panel sofort ein (Timer abbrechen, "won-pending"-Klasse entfernen - das CSS-Fade
+// (transition: opacity 0.35s, siehe #centerOverlay.phase-won.won-fade-armed .panel weiter oben)
+// uebernimmt den sanften Uebergang von selbst, da "won-fade-armed" beim Verstecken bereits gesetzt
+// wurde). Wird sowohl vom Timer als auch vom Klick/Tipp-Handler (boardWrap-Listener weiter unten)
+// aufgerufen - mehrfacher Aufruf ist unschaedlich (idempotent).
+function revealWonPanel() {
+  if (wonRevealTimer) { clearTimeout(wonRevealTimer); wonRevealTimer = null; }
+  centerOverlay.classList.remove('won-pending');
+}
 
 function updateScore() {
   const best = document.createElement('span');
@@ -2167,11 +2652,38 @@ function applyEndScreenText() {
 // kann (siehe startLoop/stopLoop/step/resetGame unten).
 function updateButtons() {
   const phase = state.phase;
+  // Vor dem Umschalten der phase-won-Klasse pruefen, ob wir GERADE ERST in 'won' wechseln -
+  // updateButtons() wird pro 'won'-Aufenthalt mehrfach aufgerufen (u. a. einmal aus stopLoop()
+  // heraus und danach nochmal am Ende von step()), die Verzoegerungs-Sequenz (siehe unten) darf
+  // aber nur EINMAL starten, sonst wuerde jeder weitere Aufruf den Timer neu aufsetzen.
+  const enteringWon = phase === 'won' && !centerOverlay.classList.contains('phase-won');
   const showCenter = phase === 'ready' || phase === 'over' || phase === 'won';
   centerOverlay.style.display = showCenter ? 'flex' : 'none';
   // 'won'-spezifisches CSS (Panel unten statt mittig, groesserer Titel - siehe Schmetterling-CSS
   // weiter oben) nur in genau diesem Zustand aktiv, 'ready'/'over' bleiben unveraendert mittig.
   centerOverlay.classList.toggle('phase-won', phase === 'won');
+  if (enteringWon) {
+    // Frischer Eintritt in 'won': Panel zunaechst unsichtbar (won-pending), Timer fuer das
+    // automatische Einblenden nach 1s starten. "won-fade-armed" wird ERST NACH einem erzwungenen
+    // Reflow gesetzt (siehe Kommentar bei der CSS-Regel oben) - so verschwindet das Panel sofort,
+    // ohne selbst wegzufaden, und nur das spaetere Einblenden laeuft ueber die 0.35s-Transition.
+    centerOverlay.classList.remove('won-fade-armed');
+    centerOverlay.classList.add('won-pending');
+    void centerOverlay.offsetWidth; // erzwingt Reflow: "opacity:0 ohne Transition" wird fixiert
+    centerOverlay.classList.add('won-fade-armed');
+    if (wonRevealTimer) clearTimeout(wonRevealTimer);
+    wonRevealTimer = setTimeout(revealWonPanel, WON_REVEAL_DELAY_MS);
+  } else if (phase !== 'won') {
+    // Phase verlassen (z. B. Retry -> zurueck zu 'ready'): Timer/Zustand sauber zuruecksetzen,
+    // damit beim naechsten Sieg wieder bei 0 gestartet wird und kein verspaeteter Timer aus der
+    // vorherigen Runde etwas auf dem neuen Bildschirm ausloest.
+    if (wonRevealTimer) { clearTimeout(wonRevealTimer); wonRevealTimer = null; }
+    centerOverlay.classList.remove('won-pending', 'won-fade-armed');
+  }
+  // 'ready'-spezifisches CSS (breiteres, horizontales Panel - siehe #centerOverlay.phase-ready
+  // .panel weiter oben, bestaetigte Stilprobe stilprobe-startbildschirm-horizontal.html) nur auf
+  // dem Startbildschirm aktiv - 'over'/'won' behalten das bisherige schmale Panel.
+  centerOverlay.classList.toggle('phase-ready', phase === 'ready');
   readyControls.style.display = phase === 'ready' ? 'flex' : 'none';
   endControls.style.display = (phase === 'over' || phase === 'won') ? 'flex' : 'none';
 
@@ -2255,6 +2767,8 @@ document.addEventListener('keydown', function (e) {
     handleDirectionInput(dir);
   } else if (state.phase === 'over' || state.phase === 'won') {
     resetGame();
+  } else if (state.phase === 'cocoon') {
+    finishCocoon();   // Leertaste ueberspringt die Verpuppungs-Sequenz (wie Klick/Tipp aufs Spielfeld)
   } else if (state.phase !== 'ready') {
     togglePause();
   }
@@ -2292,6 +2806,23 @@ restartBtn.addEventListener('click', function () {
 });
 pauseBtn.addEventListener('click', function () {
   togglePause();
+});
+
+// Klick/Tipp auf das Spielfeld waehrend der Schmetterling-Wartezeit (won-pending) blendet das Panel
+// sofort ein, statt die volle Sekunde abzuwarten (von Marco bestaetigt, 23.09.2026). pointerdown
+// statt click: canvas.addEventListener('touchstart', ..., { passive: false }) weiter unten ruft
+// e.preventDefault() auf und wuerde damit auf Touch-Geraeten das synthetische 'click'-Ereignis
+// unterdruecken - pointerdown feuert zuverlaessig sowohl fuer Maus- als auch fuer Touch-Eingaben.
+// Listener sitzt auf boardWrap statt nur auf dem Panel, weil #centerOverlay.won-pending .panel
+// bewusst pointer-events:none hat (siehe CSS oben) und Klicks in diesem Zustand daher ohnehin zum
+// darunterliegenden Spielfeld durchgereicht werden.
+boardWrap.addEventListener('pointerdown', function () {
+  if (state.phase === 'cocoon') {
+    // Sequenz per Klick/Tipp ueberspringen (Marcos Wunsch): springt direkt zum Schmetterling-Uebergang
+    finishCocoon();
+  } else if (state.phase === 'won' && centerOverlay.classList.contains('won-pending')) {
+    revealWonPanel();
+  }
 });
 
 // Swipe-Steuerung: Die Richtung wird schon WAEHREND der Bewegung erkannt (touchmove), nicht erst
@@ -2360,6 +2891,7 @@ window.addEventListener('resize', function () {
 // ---------------------------------------------------------------
 function resetGame() {
   stopLoop();
+  cancelCocoon();   // laufende Verpuppungs-Animation (rAF) abbrechen, falls z. B. per Tastatur neu gestartet wird
   state.snake = [
     { x: 9, y: 10 }, { x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }, { x: 5, y: 10 }
   ];
