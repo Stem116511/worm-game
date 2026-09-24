@@ -19,6 +19,7 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
   body {
+    touch-action: manipulation;   /* kein Doppeltipp-Zoom auf Buttons u. a.; #board behaelt sein eigenes touch-action: none */
     background: var(--page-bg);
     color: var(--text);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -123,8 +124,8 @@
   #score .num { display: inline-block; }
   #score .num.pop { animation: scorePop 0.3s ease-out; }
   @keyframes scorePop { 0% { transform: scale(1); } 35% { transform: scale(1.35); } 100% { transform: scale(1); } }
-  /* Rekord live: Highscore-Zahl in Gold (dunkleres Gold als .recordInline, weil die Zeile auf dem
-     hellen Seitenhintergrund liegt und nicht wie das Panel auf Dunkelgruen). */
+  /* Rekord live: Highscore-Zahl in Gold (dunkleres Gold als die Rekord-Pille #ffe58f, weil die Zeile
+     auf dem hellen Seitenhintergrund liegt und nicht wie das Panel auf Dunkelgruen). */
   #score .best.record { opacity: 1; }
   #score .best.record .num { color: #a06a10; font-weight: 800; }
   @media (prefers-reduced-motion: reduce) {
@@ -202,8 +203,8 @@
   /* Rekord-Pill in Gold aus der bestehenden Palette (COLORS.morpho.gold.hi = #ffe58f). */
   .pill.record { background: rgba(255, 229, 143, 0.2); color: #ffe58f; font-weight: 700; }
   .pill.record .lbl { font-size: 1em; opacity: 1; }
-  @media (max-width: 380px) { .pill { font-size: 0.95rem; padding: 3px 10px; } }
-  @media (max-width: 340px) { #endScore { gap: 6px; } .pill { font-size: 0.85rem; padding: 3px 8px; gap: 4px; } }
+  /* Anpassungen fuer schmale Screens (.pill, #endScore): siehe die gemeinsamen Media Queries
+     (<= 380 px, <= 340 px) weiter unten bei #overlayStatus. */
 
   /* Startbildschirm horizontal (bestaetigte Stilprobe stilprobe-startbildschirm-horizontal.html,
      Variante A, 23.09.2026): das Panel wird NUR waehrend der Ready-Phase breiter und flacher statt
@@ -218,7 +219,7 @@
     padding: 20px 24px;
   }
 
-  /* Neu in Paket 4: Startbildschirm-Einstellungen (Modus, Zielwert, Boesewicht). Bewusst als
+  /* Startbildschirm-Einstellungen (Modus, Zielwert, Boesewicht). Bewusst als
      eigener Block, damit er sich unabhaengig vom Endbildschirm ein-/ausblenden laesst (siehe
      updateButtons()). #readyControls und #endControls sind seit der horizontalen Stilprobe (siehe
      oben) getrennte Regeln statt einer gemeinsamen - #readyControls ist jetzt eine Zwei-Spalten-Zeile
@@ -250,8 +251,17 @@
      <= 380 px statt <= 360 px. Vorher blieb bei 361 px nur 0,6 px und bei 375 px (iPhone) 5,4 px
      Abstand zur rechten Spalte (kein Ueberlappen, aber knapp); jetzt 18,5 px bei 361 px und
      23,2 px bei 375 px. Ab 381 px unveraendert (7,4 px, ab 390 px 10,5 px). */
-  @media (max-width: 380px) { #overlayStatus { font-size: 1.5rem; } }
-  @media (max-width: 340px) { #overlayStatus { font-size: 1.3rem; } }
+  /* Gemeinsame Schmal-Screen-Regeln (vorher je zweimal): #overlayStatus (Startbildschirm) und die
+     Pillen des Endbildschirms (.pill, #endScore, Regeln bei der Pillen-Definition weiter oben). */
+  @media (max-width: 380px) {
+    #overlayStatus { font-size: 1.5rem; }
+    .pill { font-size: 0.95rem; padding: 3px 10px; }
+  }
+  @media (max-width: 340px) {
+    #overlayStatus { font-size: 1.3rem; }
+    #endScore { gap: 6px; }
+    .pill { font-size: 0.85rem; padding: 3px 8px; gap: 4px; }
+  }
   #modeSelect { display: flex; gap: 8px; flex-wrap: wrap; }
   #goalInputWrap { display: flex; align-items: center; gap: 6px; font-size: 1.235rem; }
   #goalInputWrap input[type="number"] {
@@ -278,6 +288,35 @@
     #hint .hint-keys { display: none; }
     #hint .hint-touch { display: inline; }
   }
+
+  /* Querformat-Hinweis (Phase 2, F6): Das Spiel ist fuer Hochformat gebaut. Auf Touch-Geraeten im Querformat
+     mit kleiner Hoehe (Handy) waere das Feld nur ca. 255-270 px gross, die Seite scrollt und die Panels sind
+     hoeher als das Feld. Statt einer zweiten Layout-Variante legt sich dann ein Vollbild-Hinweis darueber
+     (Klasse .rotate-hint auf <body>, gesetzt von updateRotateHint()). Farben wie die Seite, keine neue Farbe. */
+  #rotateHint {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px 24px;
+    background: var(--page-bg);
+    color: var(--text);
+    text-align: center;
+    touch-action: none;   /* die Seite dahinter (bis ca. 30 px scrollbar) soll sich nicht bewegen */
+  }
+  body.rotate-hint #rotateHint { display: flex; }
+  #rotateHint svg { width: 56px; height: 56px; flex: none; }
+  #rotateHint p { margin: 0; }
+  #rotateHint .rotateTitle { font-size: 1.365rem; font-weight: 800; }
+  #rotateHint .rotateSub { font-size: 0.95rem; opacity: 0.8; }
+  @media (prefers-reduced-motion: no-preference) {
+    #rotateHint svg { animation: rotateHintTurn 2.6s ease-in-out infinite; }
+  }
+  @keyframes rotateHintTurn { 0%, 15% { transform: rotate(-90deg); } 55%, 100% { transform: rotate(0deg); } }
 </style>
 </head>
 <body>
@@ -324,6 +363,14 @@
     <button id="pauseBtn" class="game-btn" type="button">Take a Break!</button>
   </div>
   <p id="hint"><span class="hint-keys">Arrow keys / WASD to steer · Space to pause or retry</span><span class="hint-touch">Swipe to steer</span></p>
+  <div id="rotateHint">
+    <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="18" y="4" width="28" height="56" rx="6"></rect>
+      <line x1="28" y1="52" x2="36" y2="52"></line>
+    </svg>
+    <p class="rotateTitle">Please turn your phone upright</p>
+    <p class="rotateSub">The game is made for portrait mode.</p>
+  </div>
 
 <script>
 'use strict';
@@ -344,14 +391,14 @@ const BOARD_PX = GRID * CELL;  // 480 x 480 logische Pixel (reines Spielfeld-Ras
 // gezeichnet, das laesst sich nicht per CSS umgehen). Per Playwright-Pixelmessung (siehe Chat)
 // ragt der Boesewicht in einer Rand-Zelle max. ~22px ueber die Spielfeld-Kante hinaus (Hoernchen
 // nach oben) - CANVAS_MARGIN daher grosszuegig auf 1.5 Zellen gesetzt, mit etwas Puffer fuer
-// zukuenftige Elemente (z. B. den geplanten Schmetterling).
+// weitere ueberstehende Elemente (z. B. den Schmetterling).
 const CANVAS_MARGIN = CELL * 1.5;    // 36px bei CELL=24
 const CANVAS_PX = BOARD_PX + CANVAS_MARGIN * 2;  // Gesamte Zeichenflaeche inkl. Rand (552px)
 
 // Tempo: Startwert, Untergrenze und Beschleunigung pro Futter an einer Stelle.
 // Alle drei Werte sind Richtwerte aus dem Konzept und NICHT mit Testpersonen geprueft -
 // siehe Testliste. Feinjustierung folgt, sobald ein paar Ungeuebte das Spiel probiert haben.
-const START_TICK_MS = 250;     // Dauer eines Schritts beim Spielstart (langsamer als die 150 ms der Woche-1-Demo)
+const START_TICK_MS = 250;     // Dauer eines Schritts beim Spielstart
 const MIN_TICK_MS = 90;        // schnellste erlaubte Geschwindigkeit (Untergrenze, wird nie unterschritten)
 const TICK_MS_STEP = 6;        // um so viel wird ein Schritt pro gefressenem Futter kuerzer
 
@@ -363,7 +410,7 @@ const TICK_MS_STEP = 6;        // um so viel wird ein Schritt pro gefressenem Fu
 const SWIPE_MIN_PX = 18;
 const SWIPE_CONTINUE_PX = 9;
 
-// Neu in Paket 4: Zielwert-Obergrenze fuer den Ziel-Modus (offener Punkt aus dem Konzept).
+// Zielwert-Obergrenze fuer den Ziel-Modus (offener Punkt aus dem Konzept).
 // Bei 1 Punkt/Futter und GRID*GRID=400 Feldern sind rechnerisch max. 395 moeglich (5 Startsegmente
 // sind schon belegt). 200 ist bewusst kleiner gewaehlt, damit ein Ziel in vertretbarer Zeit
 // erreichbar bleibt - ein Vorschlag von Claude, noch nicht mit Testpersonen abgeglichen.
@@ -427,12 +474,11 @@ const COCOON_STEP_PX = 2;
 const COCOON_MAX_SAMPLES = 1000;
 
 // Farbpalette: Board-Hintergrund unveraendert, Raupen-Farben aus der von Marco bestaetigten
-// Stilprobe uebernommen (siehe stilprobe-raupe-bestaetigt.md) - ersetzt die bisherigen
-// Platzhalter-Flaechenfarben (bodyA/bodyB/head als einzelne Hex-Werte) durch Farbverlaufs-Objekte
+// Stilprobe uebernommen (siehe stilprobe-raupe-bestaetigt.md) als Farbverlaufs-Objekte
 // {hi, base, lo}, die bodyFill() fuer die Kugel-Wirkung braucht. food-Unterobjekt aus
-// stilprobe-futter-bausteine.md, fuer die drei bereits gestalteten Futter-Icons (Pizza, Eis, Bier).
-// villain-Unterobjekt (neu): aus der bestaetigten Boesewicht-Stilprobe (stilprobe-villain.html) -
-// ersetzt den bisherigen einzelnen Platzhalter-Hex-Wert. outline/hornOutline/toothOutline/
+// stilprobe-futter-bausteine.md, fuer die Futter-Icons.
+// villain-Unterobjekt: aus der bestaetigten Boesewicht-Stilprobe (stilprobe-villain.html).
+// outline/hornOutline/toothOutline/
 // swordOutline der Stilprobe waren dort alle identisch ('#2a1033') und wurden deshalb hier zu
 // einem gemeinsamen villain.outline zusammengefasst (kleine bewusste Vereinfachung beim Uebertrag,
 // keine optische Aenderung). appleOutline/stem/leaf der Stilprobe entsprachen exakt den bereits
@@ -556,15 +602,15 @@ const COLORS = {
 // Spielmechanisch sind alle Sorten weiterhin gleichwertig (siehe Konzept) - reine visuelle
 // Abwechslung.
 const FOOD = [
-  { name: 'Spaghetti',    color: '#d99a2e', art: 'spaghetti' },
-  { name: 'Ramen',        color: '#e0a53a', art: 'ramen' },
-  { name: 'Pizza',        color: '#d9382e', art: 'pizza' },
-  { name: 'Banane',       color: '#f4d03f', art: 'banana' },
-  { name: 'Gummibärchen', color: '#e2432f', art: 'gummyBear' },
-  { name: 'Erdbeer-Eis',  color: '#f7a8c0', art: 'iceCream' },
-  { name: 'Sushi',        color: '#e8735a', art: 'sushi' },
-  { name: 'Aperol',       color: '#f2701a', art: 'aperol' },
-  { name: 'Bier',         color: '#f0b323', art: 'beer' }
+  { color: '#d99a2e', art: 'spaghetti' },
+  { color: '#e0a53a', art: 'ramen' },
+  { color: '#d9382e', art: 'pizza' },
+  { color: '#f4d03f', art: 'banana' },
+  { color: '#e2432f', art: 'gummyBear' },
+  { color: '#f7a8c0', art: 'iceCream' },
+  { color: '#e8735a', art: 'sushi' },
+  { color: '#f2701a', art: 'aperol' },
+  { color: '#f0b323', art: 'beer' }
 ];
 
 // Tastenzuordnung: Pfeiltasten und WASD, unabhängig vom Tastaturlayout (e.code statt e.key)
@@ -832,7 +878,6 @@ const state = {
   snake: [],                   // Feld-Koordinaten, Index 0 = Kopf
   dir: { x: 1, y: 0 },         // Richtung, die im aktuellen Tick tatsächlich angewendet wird
   dirQueue: [],                // durch Tastendruck/Wisch vorgemerkte Richtungen (hoechstens MAX_QUEUED_DIRS), pro Tick wird eine uebernommen
-  tick: 0,                     // Anzahl bisheriger Spielschritte
   score: 0,                    // Anzahl gefressenes Futter
   phase: 'ready',              // 'ready' | 'running' | 'paused' | 'over' | 'cocoon' | 'won'
                                 // ('cocoon' = Verpuppungs-Sequenz zwischen Ziel-Bissen und 'won', siehe winGame())
@@ -958,8 +1003,7 @@ function handleDirectionInput(dir) {
 }
 
 // "extra" (optional): zusaetzliche, momentan belegte Zellen, die neben der Raupe ebenfalls
-// gemieden werden sollen (z. B. das Futter beim Boesewicht-Spawn, oder umgekehrt). Neu in Paket 4 -
-// vorher gab es nur die Raupe als Einschraenkung.
+// gemieden werden sollen (z. B. das Futter beim Boesewicht-Spawn, oder umgekehrt).
 function randomFreeCell(extra) {
   let cell;
   do {
@@ -986,10 +1030,10 @@ function gameOver(reason) {
   stopLoop();
 }
 
-// Neu in Paket 4: Ziel-Modus erfolgreich beendet (Zielwert erreicht). Eigener Endzustand statt
+// Ziel-Modus erfolgreich beendet (Zielwert erreicht). Eigener Endzustand statt
 // gameOver(), da es kein Verlieren ist - eigener Text/Button-Beschriftung in updateButtons().
 //
-// Neu (23.09.2026, bestaetigte Stilprobe stilprobe-verpuppung.html): der Wechsel in 'won' erfolgt
+// Bestaetigte Stilprobe stilprobe-verpuppung.html (23.09.2026): der Wechsel in 'won' erfolgt
 // nicht mehr sofort, sondern ueber die Zwischenphase 'cocoon' (Raupe bleibt stehen, wird weiss,
 // verpuppt sich, ein Boesewicht verpufft) - erst danach, in finishCocoon(), beginnt wie bisher der
 // Schmetterling-Bildschirm. Der Highscore wird trotzdem schon HIER geschrieben (der Score steht ab
@@ -1005,7 +1049,7 @@ function winGame() {
 }
 
 // ---------------------------------------------------------------
-// 4c) Verpuppungs-Sequenz ('cocoon'-Phase)
+// 4b) Verpuppungs-Sequenz ('cocoon'-Phase)
 // ---------------------------------------------------------------
 // Laeuft NICHT ueber den Tick-Loop (der ist mit stopLoop() beendet und arbeitet in Feld-Schritten),
 // sondern ueber requestAnimationFrame: die Sequenz ist eine reine Animation, und ihr Aussehen ist
@@ -1058,7 +1102,7 @@ function finishCocoon() {
 }
 
 // ---------------------------------------------------------------
-// 4b) Highscore (localStorage)
+// 4c) Highscore (localStorage)
 // ---------------------------------------------------------------
 // Jeder Zugriff auf localStorage steckt in try/catch: je nach Browser/Modus (z. B. privates
 // Surfen, gesperrte Website-Daten) kann schon der blosse Zugriff einen Fehler werfen. Das Spiel
@@ -1203,7 +1247,6 @@ function update() {
   } else {
     state.snake.pop();
   }
-  state.tick++;
 }
 
 // ---------------------------------------------------------------
@@ -1224,7 +1267,7 @@ function drawBoard() {
 // - aber der gezeichnete Gegenstand selbst darf sichtbar ueber die Feldgrenze hinausragen, damit
 // er auf dem Handy-Bildschirm besser erkennbar ist. Nach erster Rueckmeldung ("noch grösser")
 // nochmals vergroessert). FOOD_ICON_SIZE_FACTOR gilt fuer die fertigen SVG-Icons,
-// FOOD_PLACEHOLDER_RADIUS_FACTOR fuer die noch unfertigen Kreis-Platzhalter.
+// FOOD_PLACEHOLDER_RADIUS_FACTOR fuer den Kreis im Notnetz (siehe drawFood()).
 const FOOD_ICON_SIZE_FACTOR = 1.75;
 const FOOD_PLACEHOLDER_RADIUS_FACTOR = 0.62;
 
@@ -1235,7 +1278,7 @@ function drawFood() {
   const cy = state.food.y * CELL + CELL / 2;
   const img = food.art ? foodImages[food.art] : null;
 
-  // Bereits gestaltete Sorten (Pizza/Eis/Bier): fertiges SVG-Icon mit Schatten darunter.
+  // Normalfall: fertiges SVG-Icon mit Schatten darunter.
   if (img) {
     ctx.fillStyle = COLORS.shadow;
     ctx.beginPath();
@@ -1246,8 +1289,8 @@ function drawFood() {
     return;
   }
 
-  // Noch nicht gestaltete Sorten: unveraenderter Platzhalter (einfarbiger Kreis + Glanzpunkt),
-  // bis sie in einer spaeteren Stilprobe-Runde ein eigenes Icon bekommen.
+  // Notnetz: fehlt das Icon aus irgendeinem Grund (z. B. Bild nicht geladen), bleibt das Futter als
+  // einfarbiger Kreis mit Glanzpunkt sichtbar.
   ctx.fillStyle = food.color;
   ctx.beginPath();
   ctx.arc(cx, cy, CELL * FOOD_PLACEHOLDER_RADIUS_FACTOR, 0, Math.PI * 2);
@@ -1271,8 +1314,7 @@ function bodyFill(cx, cy, r, col) {
 
 // ---------------------------------------------------------------
 // 5b) Boesewicht: eigenstaendiges Design (aus der bestaetigten Stilprobe stilprobe-villain.html
-// uebernommen, siehe COLORS.villain oben) - ersetzt den bisherigen Platzhalter (einfacher
-// dunkler Kreis mit zwei weissen Augen).
+// uebernommen, siehe COLORS.villain oben).
 // ---------------------------------------------------------------
 
 // Ein Hoernchen: schmaler, spitz zulaufender Verlaufs-Keil, der knapp an der Koerper-Oberflaeche
@@ -1536,7 +1578,7 @@ function drawVillainSwordArm(cx, cy, r) {
   drawVillainSword(handX, handY, r);
 }
 
-// Gesamter Boesewicht (ersetzt den bisherigen Platzhalter): Schatten, Hoernchen + Schwert-Arm
+// Gesamter Boesewicht: Schatten, Hoernchen + Schwert-Arm
 // (zuerst, damit die Koerper-Kugel danach ihre jeweilige Basis ueberdeckt - gleiches Prinzip wie
 // die Fuehler der Raupe), dann die Koerper-Kugel selbst mit Verlauf + Kontur, Glanzpunkt,
 // Gesicht, zuletzt Apfel-Arm (liegt dadurch sicher vorne, auch dort wo er den Koerperrand
@@ -2117,7 +2159,7 @@ function drawSnakeSegment(i, white) {
 }
 
 // ---------------------------------------------------------------
-// 5e) Verpuppungs-Sequenz zeichnen (Kokon, Weiss-Ueberblendung, Boesewicht verpufft)
+// 5d) Verpuppungs-Sequenz zeichnen (Kokon, Weiss-Ueberblendung, Boesewicht verpufft)
 // ---------------------------------------------------------------
 // Geometrie/Look 1:1 aus der von Marco bestaetigten Stilprobe stilprobe-verpuppung.html
 // ("Das ist gut, bitte implementieren", 23.09.2026). Alle Funktionen hier sind reine Zeichen- bzw.
@@ -2376,7 +2418,7 @@ function cocoonDrawables() {
 }
 
 // ---------------------------------------------------------------
-// 5d) Schmetterling ('won'-Endbildschirm, Ziel-Modus erreicht)
+// 5e) Schmetterling ('won'-Endbildschirm, Ziel-Modus erreicht)
 // ---------------------------------------------------------------
 // Geometrie 1:1 aus der von Marco bestaetigten Stilprobe uebernommen (stilprobe-schmetterling-canvas.html,
 // finale Bestaetigung "das passt"): dieselben SVG-Pfad-Strings aus der Kontur-Extraktion eines
@@ -2598,7 +2640,7 @@ function draw() {
   let drawables = [];
   let puffU = 0;
   if (state.phase === 'cocoon' && state.cocoon) {
-    // Verpuppungs-Sequenz: Raupe/Kokon/verpuffender Boesewicht je nach Zeit state.cocoon.t (5e)
+    // Verpuppungs-Sequenz: Raupe/Kokon/verpuffender Boesewicht je nach Zeit state.cocoon.t (5d)
     const seq = cocoonDrawables();
     drawables = seq.items;
     puffU = seq.puffU;
@@ -2954,6 +2996,9 @@ document.addEventListener('keydown', function (e) {
   // geht an den Browser.
   if (e.ctrlKey || e.metaKey || e.altKey) return;
 
+  // Waehrend der Querformat-Hinweis liegt (F6), steuert eine angeschlossene Tastatur das Spiel nicht.
+  if (document.body.classList.contains('rotate-hint')) return;
+
   const dir = DIR_KEYS[e.code];
   const isSpace = e.code === 'Space';
   if (!dir && !isSpace) return;
@@ -3131,9 +3176,35 @@ document.addEventListener('visibilitychange', function () {
   }
 });
 
+// Querformat-Hinweis (F6): gilt nur fuer Touch-Geraete (grober Zeiger) mit kleiner Hoehe im Querformat.
+// Das Querformat kommt wenn moeglich aus screen.orientation (Geraetelage) - nicht aus dem Verhaeltnis
+// Breite/Hoehe des Fensters, denn eine eingeblendete Bildschirmtastatur (Zielwert-Feld) macht das Fenster
+// auf kleinen Handys im Hochformat niedriger als breit. Nur wenn der Browser screen.orientation nicht
+// kennt (aeltere iOS-Versionen), zaehlt das Fenster-Verhaeltnis, dann aber nicht, solange ein Eingabefeld
+// den Fokus hat. Bewusst keine Bindung an die Phase: der Hinweis liegt in jeder Phase darueber.
+const ROTATE_HINT_MAX_HEIGHT = 500;
+const coarsePointerQuery = window.matchMedia('(pointer: coarse)');
+function isTightLandscape() {
+  if (!coarsePointerQuery.matches) return false;
+  if (window.innerHeight > ROTATE_HINT_MAX_HEIGHT) return false;
+  const so = window.screen && window.screen.orientation;
+  if (so && typeof so.type === 'string') return so.type.indexOf('landscape') === 0;
+  return window.innerWidth > window.innerHeight && !isTypingTarget(document.activeElement);
+}
+function updateRotateHint() {
+  const on = isTightLandscape();
+  document.body.classList.toggle('rotate-hint', on);
+  if (!on) return;
+  // Eine laufende Runde pausiert (wie beim Tab-Wechsel); nach dem Zurueckdrehen geht es mit "Eat again!" weiter.
+  if (state.phase === 'running') togglePause();
+  // Offene Bildschirmtastatur (Zielwert-Feld) schliessen, sie stuende sonst hinter dem Hinweis.
+  if (isTypingTarget(document.activeElement)) document.activeElement.blur();
+}
+
 window.addEventListener('resize', function () {
   setupCanvas();   // Pixeldichte kann sich beim Zoomen ändern
   draw();
+  updateRotateHint();
 });
 
 // ---------------------------------------------------------------
@@ -3147,7 +3218,6 @@ function resetGame() {
   ];
   state.dir = { x: 1, y: 0 };
   state.dirQueue = [];
-  state.tick = 0;
   state.score = 0;
   state.phase = 'ready';
   state.food = null;
@@ -3169,15 +3239,13 @@ function resetGame() {
   updateButtons();
 }
 
-// init() wartet jetzt zuerst auf preloadFoodImages() (die drei Futter-SVGs werden aus data:-URIs
-// geladen), bevor resetGame() zum ersten Mal zeichnet - sonst waere beim allerersten Frame
-// moeglicherweise noch kein Bild bereit, falls zufaellig Pizza/Eis/Bier als erstes Futter gewaehlt
-// wird. Bei data:-URIs (keine Netzwerk-Anfrage) ist das in der Praxis nahezu sofort fertig, ein
+// init() wartet zuerst auf preloadFoodImages() (die Futter-SVGs werden aus data:-URIs geladen),
+// bevor resetGame() zum ersten Mal zeichnet - sonst waere beim allerersten Frame moeglicherweise
+// noch kein Bild bereit. Bei data:-URIs (keine Netzwerk-Anfrage) ist das in der Praxis nahezu sofort fertig, ein
 // kurzer Ladezustand ist aber nicht sichtbar dargestellt (kein Spinner) - bewusste, unkritische
 // Vereinfachung, da kein Warten spuerbar sein sollte.
 async function init() {
   setupCanvas();
-  loadHighscore();
   try {
     await preloadFoodImages();
   } catch (e) {
@@ -3186,6 +3254,7 @@ async function init() {
     console.error('Fehler beim Laden der Futter-Icons:', e);
   }
   resetGame();
+  updateRotateHint();
 }
 
 init();
