@@ -244,10 +244,13 @@
   /* Punkt 11: Auf sehr schmalen Screens (<= 360 px) ragte "Ready?" (28.4 px) in die rechte Spalte
      (gemessen: 13 px Ueberlappung bei 320 px, 10 px bei 330, 6 px bei 340, 3 px bei 350). Die
      Zwei-Spalten-Anordnung bleibt, nur die Schrift dieser einen Zeile wird gestaffelt kleiner.
-     Steht bewusst NACH der Grundregel oben (gleiche Spezifitaet, spaetere Regel gewinnt). Ab
-     361 px bleibt alles unveraendert. Highscore-Zeile und Buttons brauchen keine Anpassung
-     (kein Ueberlauf gemessen). */
-  @media (max-width: 360px) { #overlayStatus { font-size: 1.5rem; } }
+     Steht bewusst NACH der Grundregel oben (gleiche Spezifitaet, spaetere Regel gewinnt).
+     Highscore-Zeile und Buttons brauchen keine Anpassung (kein Ueberlauf gemessen).
+     Punkt 14 (Variante B, von Marco bestaetigt, 23.09.2026): die erste Stufe gilt jetzt bis
+     <= 380 px statt <= 360 px. Vorher blieb bei 361 px nur 0,6 px und bei 375 px (iPhone) 5,4 px
+     Abstand zur rechten Spalte (kein Ueberlappen, aber knapp); jetzt 18,5 px bei 361 px und
+     23,2 px bei 375 px. Ab 381 px unveraendert (7,4 px, ab 390 px 10,5 px). */
+  @media (max-width: 380px) { #overlayStatus { font-size: 1.5rem; } }
   @media (max-width: 340px) { #overlayStatus { font-size: 1.3rem; } }
   #modeSelect { display: flex; gap: 8px; flex-wrap: wrap; }
   #goalInputWrap { display: flex; align-items: center; gap: 6px; font-size: 1.235rem; }
@@ -275,8 +278,6 @@
     #hint .hint-keys { display: none; }
     #hint .hint-touch { display: inline; }
   }
-  /* Entwicklerzeile: vor dem Anlass komplett entfernen */
-  #info { margin: 0; font: 12px ui-monospace, Consolas, monospace; opacity: 0.55; text-align: center; }
 </style>
 </head>
 <body>
@@ -323,7 +324,6 @@
     <button id="pauseBtn" class="game-btn" type="button">Take a Break!</button>
   </div>
   <p id="hint"><span class="hint-keys">Arrow keys / WASD to steer · Space to pause or retry</span><span class="hint-touch">Swipe to steer</span></p>
-  <p id="info"></p>
 
 <script>
 'use strict';
@@ -831,7 +831,7 @@ function preloadFoodImages() {
 const state = {
   snake: [],                   // Feld-Koordinaten, Index 0 = Kopf
   dir: { x: 1, y: 0 },         // Richtung, die im aktuellen Tick tatsächlich angewendet wird
-  nextDir: { x: 1, y: 0 },     // durch Tastendruck/Wisch vorgemerkte Richtung, wird zu Beginn des nächsten Tick übernommen
+  dirQueue: [],                // durch Tastendruck/Wisch vorgemerkte Richtungen (hoechstens MAX_QUEUED_DIRS), pro Tick wird eine uebernommen
   tick: 0,                     // Anzahl bisheriger Spielschritte
   score: 0,                    // Anzahl gefressenes Futter
   phase: 'ready',              // 'ready' | 'running' | 'paused' | 'over' | 'cocoon' | 'won'
@@ -845,7 +845,8 @@ const state = {
   villainCooldown: 0,           // Ticks, bis der Boesewicht wieder erscheinen darf
   overReason: null,             // 'wall' | 'self' | 'villain' - warum gameOver() ausgeloest wurde,
                                  // bestimmt den Text auf dem Endbildschirm (siehe updateButtons())
-  highscore: 0,                 // bester Score VOR der laufenden Runde (aus localStorage geladen)
+  highscore: 0,                 // bester Score VOR der laufenden Runde (aus localStorage geladen, siehe loadHighscore())
+  midRoundSaved: null,          // Score, den visibilitychange mitten in der Runde selbst gespeichert hat, sonst null
   newRecord: false,             // true, wenn die gerade beendete Runde den Highscore geschlagen hat
   storageOk: true,              // false, wenn localStorage auf diesem Geraet/Browser nicht nutzbar ist
   cocoon: null                  // waehrend der 'cocoon'-Phase { geo, t, last, rafId }, sonst null (siehe startCocoon())
@@ -856,7 +857,6 @@ const state = {
 // ---------------------------------------------------------------
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
-const infoEl = document.getElementById('info');
 const scoreEl = document.getElementById('score');
 const boardWrap = document.getElementById('boardWrap');
 const centerOverlay = document.getElementById('centerOverlay');
@@ -895,10 +895,6 @@ function isOpposite(a, b) {
   return a.x === -b.x && a.y === -b.y;
 }
 
-// Gemeinsame Richtungseingabe fuer Tastatur UND Swipe (Abschnitt 7 ruft beide Wege hierher).
-// Prüft die 180-Grad-Sperre immer gegen die tatsächlich aktive Richtung (state.dir), nie gegen
-// eine bereits vorgemerkte state.nextDir - so kann ein zweiter, schneller Steuerbefehl vor dem
-// nächsten Tick keine Wende "durchschmuggeln", die in der Summe 180 Grad ergibt.
 // Uebernimmt die auf dem Startbildschirm gewaehlten Einstellungen (Modus, Zielwert, Boesewicht) in
 // den state - erst beim Start, damit bis dahin nichts ein laufendes Spiel beeinflusst. Gibt false
 // zurueck (und zeigt den Fehlertext), wenn der Zielwert im Ziel-Modus ungueltig ist; dann startet
@@ -908,7 +904,7 @@ function isOpposite(a, b) {
 // aktiv, obwohl "Goal" gewaehlt war).
 function applyStartSettings() {
   if (state.mode === 'goal') {
-    const raw = parseInt(goalInput.value, 10);
+    const raw = Number(goalInput.value);   // Number statt parseInt: "1e2" = 100, "1.5" bleibt 1.5 (und wird abgelehnt)
     if (!Number.isInteger(raw) || raw < 1 || raw > MAX_GOAL_TARGET) {
       goalError.textContent = 'Please enter a whole number between 1 and ' + MAX_GOAL_TARGET + '.';
       return false;
@@ -922,13 +918,41 @@ function applyStartSettings() {
   return true;
 }
 
+// Eingabewarteschlange: Bis zu MAX_QUEUED_DIRS Richtungen koennen vor dem naechsten Tick
+// vorgemerkt werden (bei 90 ms Tick sind zwei schnelle Eingaben, z. B. hoch dann links, normal).
+// update() uebernimmt pro Tick genau eine. Jede neue Richtung wird gegen die LETZTE vorgemerkte
+// (bzw. gegen die aktive state.dir, wenn nichts vorgemerkt ist) geprueft: Gleiche Richtung tut
+// nichts, eine Querrichtung wird angehaengt (sonst verworfen, wenn die Schlange voll ist). Die
+// Gegenrichtung zur aktiven state.dir bleibt gesperrt; die Gegenrichtung zu einer VORGEMERKTEN
+// Richtung gilt als Korrektur und ersetzt diese (z. B. rechts fahrend: hoch, sofort runter ->
+// runter). Weil jeder Eintrag quer zum vorherigen liegt, kann keine Kette eine 180-Grad-Wende
+// "durchschmuggeln": zwei aufeinanderfolgende Ticks laufen nie gegenlaeufig.
+const MAX_QUEUED_DIRS = 2;
+
+function queueDirection(dir) {
+  const q = state.dirQueue;
+  const last = q.length ? q[q.length - 1] : state.dir;
+  if (dir.x === last.x && dir.y === last.y) return;         // gleiche Richtung: nichts vorzumerken
+  if (!isOpposite(dir, last)) {
+    if (q.length < MAX_QUEUED_DIRS) q.push(dir);            // Querrichtung: hinten anhaengen
+  } else if (q.length > 0) {
+    q[q.length - 1] = dir;                                  // Korrektur der vorgemerkten Richtung
+  }                                                         // (Gegenrichtung zur aktiven state.dir: gesperrt)
+}
+
+// Gemeinsame Richtungseingabe fuer Tastatur UND Swipe (Abschnitt 7 ruft beide Wege hierher).
 function handleDirectionInput(dir) {
   if (state.phase === 'over' || state.phase === 'won' || state.phase === 'paused' || state.phase === 'cocoon') return;
-  if (isOpposite(dir, state.dir)) return;
-  if (state.phase === 'ready' && !applyStartSettings()) return;
-  state.nextDir = dir;
+  if (state.phase === 'ready') {
+    if (isOpposite(dir, state.dir)) return;   // schon vor dem Start nicht gegen die Blickrichtung
+    if (!applyStartSettings()) return;
+  }
+  queueDirection(dir);
   if (state.phase === 'ready') {
     state.phase = 'running';
+    loadHighscore();          // Wert VOR der Runde frisch lesen (ein anderer Tab kann inzwischen gespeichert haben)
+    state.midRoundSaved = null;
+    updateScore();
     startLoop();
   }
 }
@@ -1030,7 +1054,6 @@ function finishCocoon() {
   state.villain = null;
   state.phase = 'won';
   draw();
-  updateInfo();
   updateButtons();
 }
 
@@ -1058,28 +1081,42 @@ function readStoredHighscore() {
 
 // Schreibt "value" nur, wenn er hoeher ist als der aktuell gespeicherte Wert (vorher frisch
 // gelesen) - so kann z. B. ein zweiter offener Tab mit tieferem Score keinen Rekord ueberschreiben.
+// Gibt true zurueck, wenn tatsaechlich geschrieben wurde (sonst false).
 function persistHighscoreMax(value) {
   const stored = readStoredHighscore();
-  if (!state.storageOk || value <= stored) return;
+  if (!state.storageOk || value <= stored) return false;
   try {
     window.localStorage.setItem(HIGHSCORE_KEY, String(value));
+    return true;
   } catch (e) {
     state.storageOk = false;
+    return false;
   }
 }
 
+// Uebernimmt den gespeicherten Highscore in state.highscore, aber nie einen kleineren als den im
+// Speicher gehaltenen: schreibt ein anderer offener Tab einen hoeheren Wert, wird er hier sichtbar;
+// laesst sich dagegen nur nicht schreiben (Speicher gesperrt oder voll), bleibt der Rekord der
+// laufenden Sitzung erhalten. Aufgerufen beim Start, beim Zurueck auf den Startbildschirm
+// (resetGame) und beim Rundenstart (handleDirectionInput).
 function loadHighscore() {
-  state.highscore = readStoredHighscore();
+  state.highscore = Math.max(state.highscore, readStoredHighscore());
 }
 
 // Am Rundenende (gameOver/winGame) aufgerufen: neuer Rekord nur bei ECHT hoeherem Score als vor
 // der Runde (Gleichstand zaehlt nicht). state.highscore wird erst hier angehoben.
+// Verglichen wird gegen den FRISCH gelesenen Speicherwert (ein anderer Tab kann inzwischen einen
+// hoeheren Rekord gespeichert haben). Ausnahme: stammt der Speicherwert von uns selbst (Tab-
+// Wechsel mitten in der Runde, siehe visibilitychange), zaehlt er nicht als "vorheriger Rekord" -
+// dann gilt weiter der Wert VOR der Runde, sonst ginge "New highscore!" verloren.
 function commitHighscore() {
-  state.newRecord = state.score > state.highscore;
-  if (state.newRecord) {
-    state.highscore = state.score;
-    persistHighscoreMax(state.score);
-  }
+  const stored = readStoredHighscore();
+  const ownMidRoundSave = state.midRoundSaved !== null && stored === state.midRoundSaved;
+  const before = ownMidRoundSave ? state.highscore : Math.max(state.highscore, stored);
+  state.newRecord = state.score > before;
+  state.highscore = state.newRecord ? state.score : before;
+  if (state.newRecord) persistHighscoreMax(state.score);
+  state.midRoundSaved = null;
 }
 
 // Anzeigewert fuer "Highscore": steigt waehrend der Runde live mit, sobald der Score den alten
@@ -1116,21 +1153,17 @@ function updateVillain() {
   }
 }
 
-// Nach jedem gefressenen Futter neu berechnen. Aendert sich die Geschwindigkeit tatsaechlich
-// und laeuft der Loop gerade, wird er neu gestartet (stopLoop() dann startLoop()) - nie
-// laeuft ein zweiter Timer parallel zum ersten.
+// Nach jedem gefressenen Futter neu berechnen. Es wird NUR state.tickMs gesetzt: scheduleNextTick()
+// liest den Wert beim Planen des naechsten Ticks ohnehin neu, das neue Tempo gilt also ab dem
+// naechsten Tick. Der Loop wird hier bewusst NICHT neu gestartet - diese Funktion laeuft mitten in
+// runTick() (ueber update()), und ein stopLoop()/startLoop() an dieser Stelle wuerde einen zweiten
+// Timer anlegen, obwohl runTick() danach ohnehin den naechsten plant (zwei parallele Schleifen).
 function applyGrowthSpeedup() {
-  const newTickMs = Math.max(MIN_TICK_MS, START_TICK_MS - state.score * TICK_MS_STEP);
-  if (newTickMs === state.tickMs) return;
-  state.tickMs = newTickMs;
-  if (loopActive) {
-    stopLoop();
-    startLoop();
-  }
+  state.tickMs = Math.max(MIN_TICK_MS, START_TICK_MS - state.score * TICK_MS_STEP);
 }
 
 function update() {
-  state.dir = state.nextDir;   // vorgemerkte Richtung genau einmal pro Tick übernehmen
+  if (state.dirQueue.length) state.dir = state.dirQueue.shift();   // vorgemerkte Richtung genau einmal pro Tick übernehmen
   updateVillain();             // Spawn/Despawn zuerst, damit die Kollisionspruefung unten den
                                 // fuer DIESEN Tick gueltigen Boesewicht-Zustand verwendet
 
@@ -2663,15 +2696,6 @@ function updateScore() {
   bestEl.classList.toggle('record', state.newRecord || (state.highscore > 0 && state.score > state.highscore));
 }
 
-function updateInfo() {
-  const modeLabel = state.mode === 'goal' ? ('Goal ' + (state.goalTarget !== null ? state.goalTarget : '?')) : 'Endless';
-  infoEl.textContent =
-    'Phase: ' + state.phase + ' · Tick ' + state.tick + ' · ' + state.tickMs + ' ms/Schritt · Punkte: ' + state.score +
-    ' · Mode: ' + modeLabel + (state.villainEnabled ? ' · Villain' : '') +
-    (state.overReason ? ' · Reason: ' + state.overReason : '') +
-    ' · HS: ' + state.highscore + ' · Storage: ' + (state.storageOk ? 'ok' : 'unavailable');
-}
-
 // Zeigt an, welcher Modus aktuell gewaehlt ist (nur auf dem Startbildschirm relevant), und blendet
 // das Zielwert-Feld nur im Ziel-Modus ein. Bewusst per style statt classList umgesetzt (einfacher,
 // keine zusaetzliche CSS-Klasse noetig).
@@ -2840,20 +2864,28 @@ function step() {
   update();
   draw();
   updateScore();
-  updateInfo();
   updateButtons();
 }
 
 // Fuehrt genau einen Tick aus und plant danach - falls der Loop noch laeuft - den naechsten,
 // mit einer Wartezeit, die eine etwaige Verspaetung des VORHERIGEN Ticks schon ausgleicht.
 function runTick() {
+  if (!loopActive) return;   // Absicherung: nach stopLoop() darf kein uebriger Timer mehr einen Schritt ausfuehren
   expectedTickTime += state.tickMs;
   step();
   if (loopActive) scheduleNextTick();
 }
 
 function scheduleNextTick() {
-  const drift = performance.now() - expectedTickTime;   // > 0, wenn wir bereits im Verzug sind
+  let drift = performance.now() - expectedTickTime;   // > 0, wenn wir bereits im Verzug sind
+  // Verzug hoechstens einen Tick nachholen: Nach einem Zeitstau (Hauptthread blockiert, z. B.
+  // Speicherbereinigung oder Systemdialog auf dem Handy) wuerden sonst alle verpassten Ticks
+  // im Schnellgang nacheinander laufen, ohne Eingabemoeglichkeit. Stattdessen wird die
+  // Zeitplanung neu gesetzt: ein faelliger Schritt, danach wieder normaler Takt.
+  if (drift > state.tickMs) {
+    expectedTickTime = performance.now();
+    drift = 0;
+  }
   const delay = Math.max(0, state.tickMs - drift);
   timeoutId = setTimeout(runTick, delay);
 }
@@ -2863,7 +2895,6 @@ function startLoop() {
   loopActive = true;
   expectedTickTime = performance.now();
   scheduleNextTick();
-  updateInfo();
   updateButtons();
 }
 
@@ -2872,7 +2903,6 @@ function stopLoop() {
   loopActive = false;
   clearTimeout(timeoutId);
   timeoutId = null;
-  updateInfo();
   updateButtons();
 }
 
@@ -2917,6 +2947,13 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
+  // Tastenkuerzel mit Ctrl/Cmd/Alt gehoeren dem Browser (Speichern, Tab schliessen, Alles
+  // auswaehlen, Zurueck usw.): weder als Spielbefehl werten noch mit preventDefault() blockieren.
+  // Bewusst NACH dem Eingabefeld-Zweig oben (dort bleibt alles wie bisher) und ohne Shift: Shift+Pfeil
+  // steuert weiter die Raupe. Entscheidung von Marco (24.09.2026): auch Alt/Cmd+Pfeil (Browser-Zurueck)
+  // geht an den Browser.
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+
   const dir = DIR_KEYS[e.code];
   const isSpace = e.code === 'Space';
   if (!dir && !isSpace) return;
@@ -2930,6 +2967,8 @@ document.addEventListener('keydown', function (e) {
 
   if (dir) {
     handleDirectionInput(dir);
+  } else if (state.phase === 'won' && centerOverlay.classList.contains('won-pending')) {
+    revealWonPanel();   // Panel noch ausgeblendet (1-s-Verzoegerung): Leertaste wirkt wie ein Tipp aufs Spielfeld, erst die naechste setzt zurueck
   } else if (state.phase === 'over' || state.phase === 'won') {
     resetGame();
   } else if (state.phase === 'cocoon') {
@@ -2989,7 +3028,6 @@ function resetHighscore() {
   state.highscore = 0;
   state.newRecord = false;
   updateScore();
-  updateInfo();
   updateButtons();
 }
 
@@ -3089,7 +3127,7 @@ document.addEventListener('visibilitychange', function () {
   // laufender Rekord nicht verloren. state.highscore bleibt dabei unveraendert, damit "New
   // highscore!" am Rundenende weiterhin korrekt gegen den Wert VOR der Runde verglichen wird.
   if (document.hidden && state.score > state.highscore) {
-    persistHighscoreMax(state.score);
+    if (persistHighscoreMax(state.score)) state.midRoundSaved = state.score;   // merken: kein "fremder" Rekord (siehe commitHighscore())
   }
 });
 
@@ -3108,7 +3146,7 @@ function resetGame() {
     { x: 9, y: 10 }, { x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }, { x: 5, y: 10 }
   ];
   state.dir = { x: 1, y: 0 };
-  state.nextDir = { x: 1, y: 0 };
+  state.dirQueue = [];
   state.tick = 0;
   state.score = 0;
   state.phase = 'ready';
@@ -3118,14 +3156,16 @@ function resetGame() {
   state.villainCooldown = 0;
   state.overReason = null;
   state.newRecord = false;
-  // state.highscore bewusst NICHT zurueckgesetzt - bleibt ueber Runden hinweg erhalten.
+  state.midRoundSaved = null;
+  // state.highscore bewusst NICHT zurueckgesetzt - bleibt ueber Runden hinweg erhalten (wird aber
+  // frisch aus dem Speicher nachgezogen, falls ein anderer Tab einen hoeheren Wert gespeichert hat).
+  loadHighscore();
   // state.mode/goalTarget/villainEnabled bewusst NICHT zurueckgesetzt: das sind die auf dem
   // Startbildschirm gewaehlten Einstellungen, die beim naechsten Klick auf Start ohnehin frisch
   // aus den Bedienelementen (goalInput/villainCheckbox) uebernommen werden (siehe oben).
   spawnFood();
   draw();
   updateScore();
-  updateInfo();
   updateButtons();
 }
 
@@ -3141,7 +3181,9 @@ async function init() {
   try {
     await preloadFoodImages();
   } catch (e) {
-    infoEl.textContent = 'Fehler beim Laden der Futter-Icons: ' + e.message;
+    // Kein sichtbarer Fehlertext mehr (Entwicklerzeile #info entfernt). Die Icons sind data:-URIs,
+    // ein Fehler ist praktisch ausgeschlossen; das Spiel laeuft ohne Icons weiter.
+    console.error('Fehler beim Laden der Futter-Icons:', e);
   }
   resetGame();
 }
