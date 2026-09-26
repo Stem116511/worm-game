@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Very Hungry ConcorPillar</title>
 <style>
   :root {
@@ -77,6 +77,12 @@
   }
   .game-btn:active { filter: brightness(0.9); }
   .mode-btn { padding: 8px 16px; font-size: 1.17rem; flex: 1 1 auto; min-width: 0; }
+  /* Gewaehlter Modus (F10): nicht mehr NUR ueber Transparenz erkennbar (WCAG 1.4.1). Der gewaehlte Button
+     bekommt einen 2-px-Ring in der Panel-Textfarbe (box-shadow: aendert kein Layout), der nicht gewaehlte
+     bleibt mit Deckkraft 0.8 (statt 0.55) klar lesbar: Kontrast Text/Knopf ca. 4.7:1 statt 3.0:1. Der Zustand
+     kommt aus aria-pressed (siehe updateModeButtons()), so liest ihn auch ein Screenreader. */
+  .mode-btn[aria-pressed="false"] { opacity: 0.8; }
+  .mode-btn[aria-pressed="true"] { box-shadow: 0 0 0 2px #f6f1e7; }
   /* #startBtn statt .game-btn: ID-Selektor ueberschreibt sicher nur den Start-Button (Faktor 1.3,
      siehe Stilprobe) - #pauseBtn (teilt sich ebenfalls .game-btn, gehoert aber zum laufenden Spiel,
      nicht zum Endbildschirm) bleibt dadurch beim bisherigen 1rem unveraendert. #restartBtn bekommt
@@ -118,7 +124,7 @@
      in der Score-Zeile oben etwas zurueckgenommen, damit der aktuelle Score die Hauptzahl bleibt;
      Startbildschirm-Zeile im selben kleinen Stil wie #endScore; Rekord-Hinweis in Gold aus der
      bestehenden Palette (COLORS.food.cheeseHi / COLORS.morpho.gold.hi), keine neue Farbe. */
-  #score .best { font-weight: 500; opacity: 0.7; }
+  #score .best { font-weight: 500; opacity: 0.75; }   /* F10: 0.7 -> 0.75 */
   /* Punkt-Animation: die Zahl wird kurz gross ('Pop'), wenn sie steigt (Klasse .pop, siehe popNum()).
      transform aendert das Layout nicht - auch bei dreistelligen Zahlen keine Verschiebung. */
   #score .num { display: inline-block; }
@@ -127,10 +133,16 @@
   /* Rekord live: Highscore-Zahl in Gold (dunkleres Gold als die Rekord-Pille #ffe58f, weil die Zeile
      auf dem hellen Seitenhintergrund liegt und nicht wie das Panel auf Dunkelgruen). */
   #score .best.record { opacity: 1; }
-  #score .best.record .num { color: #a06a10; font-weight: 800; }
+  #score .best.record .num { color: #96610d; font-weight: 800; }   /* F10: #a06a10 -> #96610d (Kontrast 4.09:1 -> 4.65:1 auf dem Seitenhintergrund) */
   @media (prefers-reduced-motion: reduce) {
     #score .num.pop { animation: none; }
     #score { transition: none; }
+  }
+  /* Nur fuer Screenreader: unsichtbar, aber im Zugriffsbaum (F12, Ansagen ueber #srStatus). Absolut
+     positioniert, nimmt daher weder Platz noch flex-gap im Layout ein. */
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+    overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
   }
   #bestLine { margin: 0; font-size: 1.04rem; opacity: 0.85; text-align: center; }
 
@@ -163,6 +175,11 @@
      einen Reflow, und aktiviert "won-fade-armed" erst danach - dadurch betrifft die Transition nur
      noch den spaeteren Uebergang beim Einblenden (opacity 0 -> 1), nicht das sofortige Verstecken. */
   #centerOverlay.phase-won.won-fade-armed .panel { transition: opacity 0.35s ease; }
+  /* F12: bei "Bewegung reduzieren" erscheint das Schmetterling-Panel ohne Einblend-Animation. Steht bewusst
+     NACH der Regel oben (gleiche Spezifitaet, die spaetere gewinnt). */
+  @media (prefers-reduced-motion: reduce) {
+    #centerOverlay.phase-won.won-fade-armed .panel { transition: none; }
+  }
   #centerOverlay.phase-won.won-pending .panel { opacity: 0; pointer-events: none; }
 
   /* Endbildschirm (Game Over) vergroessert (bestaetigte Stilprobe
@@ -198,10 +215,10 @@
     padding: 3px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.12);
     font-size: 1.04rem; line-height: 1.3; font-variant-numeric: tabular-nums;
   }
-  .pill .lbl { font-size: 0.8em; opacity: 0.75; }
+  .pill .lbl { font-size: 0.8em; opacity: 0.95; }   /* F10: 0.75 -> 0.95 (Kontrast 3.5:1 -> ueber 4.5:1) */
   .pill .val { font-weight: 700; }
   /* Rekord-Pill in Gold aus der bestehenden Palette (COLORS.morpho.gold.hi = #ffe58f). */
-  .pill.record { background: rgba(255, 229, 143, 0.2); color: #ffe58f; font-weight: 700; }
+  .pill.record { background: rgba(255, 229, 143, 0.12); color: #ffe58f; font-weight: 700; }   /* F10: Hintergrund 0.2 -> 0.12 (Kontrast 3.9:1 -> ueber 4.5:1) */
   .pill.record .lbl { font-size: 1em; opacity: 1; }
   /* Anpassungen fuer schmale Screens (.pill, #endScore): siehe die gemeinsamen Media Queries
      (<= 380 px, <= 340 px) weiter unten bei #overlayStatus. */
@@ -323,7 +340,7 @@
   <h1 id="gameTitle">The Very Hungry ConcorPillar</h1>
   <p id="score"></p>
   <div id="boardWrap">
-    <canvas id="board"></canvas>
+    <canvas id="board" role="img" aria-label="Game board with the ConcorPillar caterpillar. Steer it with the arrow keys or by swiping."></canvas>
     <div id="centerOverlay">
       <div class="panel">
         <div id="readyControls">
@@ -333,14 +350,14 @@
           </div>
           <div class="readyRight">
             <div id="modeSelect">
-              <button type="button" id="modeEndlessBtn" class="game-btn mode-btn">Endless</button>
-              <button type="button" id="modeGoalBtn" class="game-btn mode-btn">Goal</button>
+              <button type="button" id="modeEndlessBtn" class="game-btn mode-btn" aria-pressed="true">Endless</button>
+              <button type="button" id="modeGoalBtn" class="game-btn mode-btn" aria-pressed="false">Goal</button>
             </div>
             <div id="goalInputWrap">
               <label for="goalInput">Target:</label>
-              <input type="number" id="goalInput" min="1" max="200" step="1" value="50" enterkeyhint="go">
+              <input type="number" id="goalInput" min="1" max="200" step="1" value="50" enterkeyhint="go" aria-describedby="goalError">
             </div>
-            <p id="goalError"></p>
+            <p id="goalError" role="alert"></p>
             <label id="villainLabel"><input type="checkbox" id="villainCheckbox"> Villain</label>
             <button id="startBtn" class="game-btn" type="button">Start</button>
           </div>
@@ -363,6 +380,7 @@
     <button id="pauseBtn" class="game-btn" type="button">Take a Break!</button>
   </div>
   <p id="hint"><span class="hint-keys">Arrow keys / WASD to steer · Space to pause or retry</span><span class="hint-touch">Swipe to steer</span></p>
+  <div id="srStatus" class="sr-only" role="status" aria-live="polite"></div>
   <div id="rotateHint">
     <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <rect x="18" y="4" width="28" height="56" rx="6"></rect>
@@ -920,16 +938,28 @@ const modeGoalBtn = document.getElementById('modeGoalBtn');
 const goalInputWrap = document.getElementById('goalInputWrap');
 const goalInput = document.getElementById('goalInput');
 const goalError = document.getElementById('goalError');
+const srStatus = document.getElementById('srStatus');
+const centerPanel = document.querySelector('#centerOverlay .panel');
 const villainCheckbox = document.getElementById('villainCheckbox');
 const startBtn = document.getElementById('startBtn');
 const restartBtn = document.getElementById('restartBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 
+// F13: merkt sich die zuletzt verwendete dpr. canvas.width/height NEU zu setzen loescht die
+// Zeichenflaeche und setzt auch die Transformationsmatrix zurueck (Browser-Verhalten) - das war
+// bisher bei JEDEM resize-Ereignis der Fall, auch wenn sich nur die Fenstergroesse aenderte (z. B.
+// Bildschirmtastatur ein-/ausblenden), nicht die Pixeldichte. Jetzt geschieht das (und der Aufbau
+// des Hintergrund-Caches, siehe buildBackgroundCache() weiter unten) nur noch, wenn dpr sich
+// tatsaechlich geaendert hat (z. B. Fenster auf einen anderen Bildschirm verschoben).
+let currentDpr = null;
 function setupCanvas() {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  if (dpr === currentDpr) return;
+  currentDpr = dpr;
   canvas.width = CANVAS_PX * dpr;   // setzt die Zeichenfläche zurück ...
   canvas.height = CANVAS_PX * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);  // ... daher Skalierung danach setzen
+  backgroundCache = buildBackgroundCache(dpr);
 }
 
 // ---------------------------------------------------------------
@@ -952,9 +982,11 @@ function applyStartSettings() {
     const raw = Number(goalInput.value);   // Number statt parseInt: "1e2" = 100, "1.5" bleibt 1.5 (und wird abgelehnt)
     if (!Number.isInteger(raw) || raw < 1 || raw > MAX_GOAL_TARGET) {
       goalError.textContent = 'Please enter a whole number between 1 and ' + MAX_GOAL_TARGET + '.';
+      goalInput.setAttribute('aria-invalid', 'true');
       return false;
     }
     goalError.textContent = '';
+    goalInput.removeAttribute('aria-invalid');
     state.goalTarget = raw;
   } else {
     state.goalTarget = null;
@@ -1004,21 +1036,50 @@ function handleDirectionInput(dir) {
 
 // "extra" (optional): zusaetzliche, momentan belegte Zellen, die neben der Raupe ebenfalls
 // gemieden werden sollen (z. B. das Futter beim Boesewicht-Spawn, oder umgekehrt).
-function randomFreeCell(extra) {
-  let cell;
-  do {
-    cell = { x: Math.floor(Math.random() * GRID), y: Math.floor(Math.random() * GRID) };
-  } while (
-    state.snake.some(function (s) { return s.x === cell.x && s.y === cell.y; }) ||
-    (extra && extra.some(function (c) { return c.x === cell.x && c.y === cell.y; }))
-  );
-  return cell;
+//
+// Gibt null zurueck, wenn KEINE Zelle frei ist (Feld voll). Die frueheren do-while-Schleife ohne
+// Ausstieg lief in diesem Fall endlos (Tab friert ein, siehe F7). Jetzt: erst wie bisher zufaellig
+// ziehen und belegte Zellen verwerfen (schnell, und die Zufallsfolge bleibt fuer normale Spielstaende
+// unveraendert), nach RANDOM_CELL_ATTEMPTS Fehlversuchen (Feld fast voll) die freien Zellen einsammeln
+// und daraus waehlen. So endet der Aufruf immer.
+const RANDOM_CELL_ATTEMPTS = 100;
+
+function isCellTaken(cell, extra) {
+  return state.snake.some(function (s) { return s.x === cell.x && s.y === cell.y; }) ||
+    (!!extra && extra.some(function (c) { return c.x === cell.x && c.y === cell.y; }));
 }
 
+function randomFreeCell(extra) {
+  for (let i = 0; i < RANDOM_CELL_ATTEMPTS; i++) {
+    const cell = { x: Math.floor(Math.random() * GRID), y: Math.floor(Math.random() * GRID) };
+    if (!isCellTaken(cell, extra)) return cell;
+  }
+  const free = [];
+  for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < GRID; x++) {
+      if (!isCellTaken({ x: x, y: y }, extra)) free.push({ x: x, y: y });
+    }
+  }
+  if (free.length === 0) return null;
+  return free[Math.floor(Math.random() * free.length)];
+}
+
+// Legt neues Futter auf ein freies Feld. Gibt false zurueck, wenn das Feld voll ist (dann bleibt
+// state.food unveraendert, der Aufrufer beendet die Runde, siehe update()). Steht nur noch der
+// Boesewicht auf dem allerletzten freien Feld, weicht er dem Futter (er verschwindet wie nach Ablauf
+// seiner Zeit, mit Abklingzeit) - sonst waere das Futter unmoeglich zu platzieren.
 function spawnFood() {
-  const extra = state.villain ? [state.villain] : undefined;
-  const cell = randomFreeCell(extra);
+  let cell = randomFreeCell(state.villain ? [state.villain] : undefined);
+  if (!cell && state.villain) {
+    cell = randomFreeCell();
+    if (cell) {
+      state.villain = null;
+      state.villainCooldown = VILLAIN_COOLDOWN_TICKS;
+    }
+  }
+  if (!cell) return false;
   state.food = { x: cell.x, y: cell.y, type: Math.floor(Math.random() * FOOD.length) };
+  return true;
 }
 
 // "reason" haelt fest, WORAN die Raupe gestorben ist ('wall' | 'self' | 'villain') - der
@@ -1030,8 +1091,9 @@ function gameOver(reason) {
   stopLoop();
 }
 
-// Ziel-Modus erfolgreich beendet (Zielwert erreicht). Eigener Endzustand statt
-// gameOver(), da es kein Verlieren ist - eigener Text/Button-Beschriftung in updateButtons().
+// Ziel-Modus erfolgreich beendet (Zielwert erreicht) - oder im Endless-Modus das Feld komplett
+// gefuellt (siehe update()). Eigener Endzustand statt gameOver(), da es kein Verlieren ist -
+// eigener Text/Button-Beschriftung in updateButtons().
 //
 // Bestaetigte Stilprobe stilprobe-verpuppung.html (23.09.2026): der Wechsel in 'won' erfolgt
 // nicht mehr sofort, sondern ueber die Zwischenphase 'cocoon' (Raupe bleibt stehen, wird weiss,
@@ -1045,7 +1107,10 @@ function winGame() {
   commitHighscore();
   state.food = null;
   stopLoop();
-  startCocoon();
+  // F12: Bei "Bewegung reduzieren" (System-Einstellung) entfaellt die Canvas-Animation: direkt zum
+  // Schmetterling, der Highscore ist oben schon geschrieben. Die Einstellung wird bei jedem Sieg neu gelesen.
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) finishCocoon();
+  else startCocoon();
 }
 
 // ---------------------------------------------------------------
@@ -1193,7 +1258,7 @@ function updateVillain() {
   if (Math.random() < VILLAIN_SPAWN_CHANCE) {
     const extra = state.food ? [state.food] : undefined;
     const cell = randomFreeCell(extra);
-    state.villain = { x: cell.x, y: cell.y, ticksLeft: VILLAIN_LIFETIME_TICKS };
+    if (cell) state.villain = { x: cell.x, y: cell.y, ticksLeft: VILLAIN_LIFETIME_TICKS };   // null = Feld voll: kein Boesewicht
   }
 }
 
@@ -1242,7 +1307,12 @@ function update() {
       winGame();
       return;
     }
-    spawnFood();
+    if (!spawnFood()) {
+      // Feld voll (Endless: 395 Punkte, alle 400 Felder belegt): perfekte Runde, endet wie ein
+      // erreichtes Ziel - Verpuppung und Schmetterling (Entscheidung von Marco, 24.09.2026).
+      winGame();
+      return;
+    }
     applyGrowthSpeedup();
   } else {
     state.snake.pop();
@@ -1253,11 +1323,12 @@ function update() {
 // 5) Zeichnen
 // ---------------------------------------------------------------
 
-function drawBoard() {
+function drawBoard(targetCtx) {
+  targetCtx = targetCtx || ctx;
   for (let y = 0; y < GRID; y++) {
     for (let x = 0; x < GRID; x++) {
-      ctx.fillStyle = (x + y) % 2 === 0 ? COLORS.boardA : COLORS.boardB;
-      ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+      targetCtx.fillStyle = (x + y) % 2 === 0 ? COLORS.boardA : COLORS.boardB;
+      targetCtx.fillRect(x * CELL, y * CELL, CELL, CELL);
     }
   }
 }
@@ -1942,6 +2013,50 @@ function buildMeadowCache() {
 
 const meadowCache = buildMeadowCache();
 
+// ---------------------------------------------------------------
+// 5c-2) Hintergrund-Cache (Phase 2, F13)
+// ---------------------------------------------------------------
+// draw() setzte bisher bei JEDEM Tick den kompletten statischen Hintergrund neu zusammen: die Wiese
+// (ctx.drawImage(meadowCache, ...), unveraendert seit "5c) Wiese" oben) PLUS das Karo-Raster
+// (drawBoard(), 400 einzelne fillRect) PLUS drei weitere drawImage-Aufrufe fuer die Wiesen-Streifen,
+// die ins Spielfeld hineinragen. All das haengt nie vom Spielzustand ab, nur von der Pixeldichte
+// (dpr) - deshalb wird es jetzt EINMAL pro dpr auf eine eigene Offscreen-Canvas gezeichnet
+// (buildBackgroundCache()) und pro Frame nur noch mit einem einzigen drawImage kopiert (siehe
+// draw() weiter unten). Das Bild bleibt bewusst pixelgleich zum bisherigen Stand (auch die Wiese
+// bleibt in 1x aufgebaut und wird beim Zusammensetzen genauso hochskaliert wie bisher) - eine
+// schaerfere Wiese auf Retina waere eine eigene, sichtbare Entscheidung (siehe Pruefbericht F13).
+//
+// Der Cache wird direkt in Geraeteaufloesung (CANVAS_PX * dpr) angelegt, mit derselben
+// dpr-Transformation wie die Spiel-Canvas - dieselben logischen Koordinaten (0..CANVAS_PX) treffen
+// also dieselben Geraete-Pixel. draw() kopiert ihn deshalb 1:1 (kein weiteres Hoch-/Herunterskalieren
+// noetig), dafuer wird die Skalierung der Spiel-Canvas fuer genau diesen einen Aufruf kurz
+// ausgesetzt (ctx.setTransform(1,...), siehe draw()).
+let backgroundCache = null;
+
+function buildBackgroundCache(dpr) {
+  const bg = document.createElement('canvas');
+  bg.width = CANVAS_PX * dpr;
+  bg.height = CANVAS_PX * dpr;
+  const bctx = bg.getContext('2d');
+  bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  bctx.drawImage(meadowCache, 0, 0);
+  bctx.save();
+  bctx.translate(CANVAS_MARGIN, CANVAS_MARGIN);
+  drawBoard(bctx);
+  const mo = MEADOW_FIELD_OVERLAP;
+  bctx.drawImage(meadowCache,
+    0, CANVAS_MARGIN + BOARD_PX - mo, CANVAS_PX, CANVAS_MARGIN + mo,
+    -CANVAS_MARGIN, BOARD_PX - mo, CANVAS_PX, CANVAS_MARGIN + mo);
+  bctx.drawImage(meadowCache,
+    0, 0, CANVAS_MARGIN + mo, CANVAS_PX,
+    -CANVAS_MARGIN, -CANVAS_MARGIN, CANVAS_MARGIN + mo, CANVAS_PX);
+  bctx.drawImage(meadowCache,
+    CANVAS_MARGIN + BOARD_PX - mo, 0, CANVAS_MARGIN + mo, CANVAS_PX,
+    BOARD_PX - mo, -CANVAS_MARGIN, CANVAS_MARGIN + mo, CANVAS_PX);
+  bctx.restore();
+  return bg;
+}
+
 // Dreieckiger Verbinder pro Segment (inkl. Kopf), zeigt zur jeweils naechsten/schwanzwaertigen
 // Kugel - schliesst die Luecke zwischen zwei benachbarten Kreisen. Haengt nur von der Lage der
 // Nachbar-Segmente in "path" ab, nicht von der aktuellen Blickrichtung - funktioniert dadurch
@@ -2597,13 +2712,17 @@ function drawOverlay() {
 // dass bei GLEICHER Zeile (waagrechte Nachbarglieder) die Kopf-naeheren Glieder weiterhin wie
 // bisher ueber den schwanz-naeheren liegen.
 function draw() {
-  // Zuerst die GESAMTE Zeichenflaeche inkl. Rand loeschen/neu zeichnen (nicht nur das Karo-Raster) -
-  // sonst wuerden Boesewicht-/Futter-Teile, die letzten Tick in den Rand hineinragten, dort als Spur
-  // liegen bleiben, da drawBoard() nur die GRID*CELL-Flaeche neu zeichnet. Statt eines einfarbigen
-  // fillRect() wird hier die vorgerenderte Wiese (meadowCache, siehe Abschnitt "5c) Wiese" weiter
-  // oben) als fertiges Bild hineinkopiert - ein einzelner drawImage()-Aufruf statt jeden Tick erneut
-  // hunderte ueberlappende Grashalme/Blueten zu berechnen.
-  ctx.drawImage(meadowCache, 0, 0);
+  // Kompletter statischer Hintergrund (Wiese, Karo-Raster, hineinragende Wiesen-Streifen) kommt seit
+  // F13 aus EINEM vorbereiteten Bild (backgroundCache, siehe "5c-2) Hintergrund-Cache" weiter oben) -
+  // ein einziger drawImage()-Aufruf statt der bisherigen 5 (Wiese + Karo + 3 Streifen). Der Cache
+  // liegt bereits in Geraeteaufloesung vor, deshalb hier kurz auf die tatsaechlichen Geraete-Pixel
+  // wechseln (ctx.setTransform(1,...)) statt die sonst geltende dpr-Skalierung ein zweites Mal
+  // anzuwenden - save()/restore() sichert die dpr-Transformation aus setupCanvas() unveraendert fuer
+  // den Rest der Funktion.
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(backgroundCache, 0, 0);
+  ctx.restore();
 
   // Rest der Zeichenroutine bleibt unveraendert und rechnet weiterhin mit Koordinaten von 0 bis
   // BOARD_PX (Zellgrenzen etc.) - der Rand wird stattdessen per Verschiebung des Koordinatenursprungs
@@ -2611,31 +2730,6 @@ function draw() {
   // Futter-Icons in Randzellen), in diesen Rand hinein statt hart abgeschnitten gezeichnet werden.
   ctx.save();
   ctx.translate(CANVAS_MARGIN, CANVAS_MARGIN);
-
-  drawBoard();
-
-  // Wiese darf unten/links/rechts sichtbar ins Spielfeld hineinreichen (Wunsch von Marco) - drawBoard()
-  // hat das Karo gerade VOLL deckend darueber gezeichnet, deshalb hier den entsprechenden Ausschnitt
-  // aus meadowCache (der im Spielfeld-Bereich ausserhalb der eigentlichen Randstreifen transparent
-  // ist, siehe buildMeadowCache()-Kommentar) noch einmal obendrauf kopieren. Quelle und Ziel sind
-  // exakt derselbe Bildausschnitt, nur um CANVAS_MARGIN verschoben (da wir hier bereits im per
-  // translate() verschobenen Koordinatensystem sind, meadowCache aber in den urspruenglichen,
-  // unverschobenen Canvas-Koordinaten aufgebaut wurde). Die Boesewicht-/Futter-/Raupen-Objekte werden
-  // ERST DANACH gezeichnet (siehe drawables unten) - liegen also IMMER ueber der hineinragenden
-  // Wiese, auch wenn beide in derselben Feld-Zeile stehen (das war Marcos Vorrang-Wunsch).
-  const mo = MEADOW_FIELD_OVERLAP;
-  // unten:
-  ctx.drawImage(meadowCache,
-    0, CANVAS_MARGIN + BOARD_PX - mo, CANVAS_PX, CANVAS_MARGIN + mo,
-    -CANVAS_MARGIN, BOARD_PX - mo, CANVAS_PX, CANVAS_MARGIN + mo);
-  // links:
-  ctx.drawImage(meadowCache,
-    0, 0, CANVAS_MARGIN + mo, CANVAS_PX,
-    -CANVAS_MARGIN, -CANVAS_MARGIN, CANVAS_MARGIN + mo, CANVAS_PX);
-  // rechts:
-  ctx.drawImage(meadowCache,
-    CANVAS_MARGIN + BOARD_PX - mo, 0, CANVAS_MARGIN + mo, CANVAS_PX,
-    BOARD_PX - mo, -CANVAS_MARGIN, CANVAS_MARGIN + mo, CANVAS_PX);
 
   let drawables = [];
   let puffU = 0;
@@ -2699,6 +2793,7 @@ const WON_REVEAL_DELAY_MS = 1000;
 function revealWonPanel() {
   if (wonRevealTimer) { clearTimeout(wonRevealTimer); wonRevealTimer = null; }
   centerOverlay.classList.remove('won-pending');
+  centerPanel.inert = false;
 }
 
 // Live-Score-Zeile (Punkt 6): die Elemente werden EINMAL aufgebaut und danach nur noch mit neuen
@@ -2743,14 +2838,15 @@ function updateScore() {
 // keine zusaetzliche CSS-Klasse noetig).
 function updateModeButtons() {
   const isGoal = state.mode === 'goal';
-  modeEndlessBtn.style.opacity = isGoal ? '0.55' : '1';
-  modeGoalBtn.style.opacity = isGoal ? '1' : '0.55';
+  modeEndlessBtn.setAttribute('aria-pressed', String(!isGoal));   // Darstellung: CSS .mode-btn[aria-pressed]
+  modeGoalBtn.setAttribute('aria-pressed', String(isGoal));
   goalInputWrap.style.display = isGoal ? 'flex' : 'none';
 }
 
 function setMode(mode) {
   state.mode = mode;
   goalError.textContent = '';
+  goalInput.removeAttribute('aria-invalid');
   updateModeButtons();
 }
 
@@ -2868,6 +2964,7 @@ function updateButtons() {
     // ohne selbst wegzufaden, und nur das spaetere Einblenden laeuft ueber die 0.35s-Transition.
     centerOverlay.classList.remove('won-fade-armed');
     centerOverlay.classList.add('won-pending');
+    centerPanel.inert = true;   // F12: das noch unsichtbare Panel nimmt weder Tab-Fokus noch Leertaste-Klick (Retry) an
     void centerOverlay.offsetWidth; // erzwingt Reflow: "opacity:0 ohne Transition" wird fixiert
     centerOverlay.classList.add('won-fade-armed');
     if (wonRevealTimer) clearTimeout(wonRevealTimer);
@@ -2878,6 +2975,7 @@ function updateButtons() {
     // vorherigen Runde etwas auf dem neuen Bildschirm ausloest.
     if (wonRevealTimer) { clearTimeout(wonRevealTimer); wonRevealTimer = null; }
     centerOverlay.classList.remove('won-pending', 'won-fade-armed');
+    centerPanel.inert = false;
   }
   // 'ready'-spezifisches CSS (breiteres, horizontales Panel - siehe #centerOverlay.phase-ready
   // .panel weiter oben, bestaetigte Stilprobe stilprobe-startbildschirm-horizontal.html) nur auf
@@ -2900,6 +2998,33 @@ function updateButtons() {
   // Der Button unter dem Feld erscheint nur waehrend des Spiels; in der Pause liegt "Eat again!"
   // im Panel (resumeBtn, siehe HTML).
   pauseBtn.style.display = phase === 'running' ? 'inline-block' : 'none';
+  announcePhase();
+}
+
+// Ansagen fuer Screenreader (F12) ueber die unsichtbare Live-Region #srStatus - nur beim WECHSEL der
+// Phase, obwohl updateButtons() pro Tick und pro 'won'-Aufenthalt mehrfach laeuft. Bewusst eine eigene
+// Region statt aria-live auf dem Panel: das Panel wird per display:none/flex umgeschaltet, dabei melden
+// Screenreader Textaenderungen unzuverlaessig. Beim Rueckwechsel in 'ready' wird der Text geleert, damit
+// dieselbe Ansage in der naechsten Runde wieder als Aenderung gilt.
+let announcedPhase = null;
+function announcePhase() {
+  const phase = state.phase;
+  if (phase === announcedPhase) return;
+  const prev = announcedPhase;
+  announcedPhase = phase;
+  let text = '';
+  if (phase === 'over' || phase === 'won') {
+    const lines = phase === 'won'
+      ? [endTitle.textContent]
+      : ['Game over.', endLine1.textContent, endLine2.textContent];
+    text = lines.filter(Boolean).map(function (l) { return /[.!?]$/.test(l) ? l : l + '.'; }).join(' ') + ' Score ' + state.score + '.' +
+      (state.newRecord ? ' New highscore!' : (state.highscore > 0 ? ' Highscore ' + state.highscore + '.' : ''));
+  } else if (phase === 'paused') {
+    text = 'Paused.';
+  } else if (phase === 'running' && prev === 'paused') {
+    text = 'Resumed.';
+  }
+  srStatus.textContent = text;
 }
 
 function step() {
